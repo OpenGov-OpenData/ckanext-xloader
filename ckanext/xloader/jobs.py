@@ -258,6 +258,31 @@ def xloader_data_into_datastore_(input, job_dict):
 
     tmp_file.close()
 
+    flag_count = 0
+    try:
+        datastore_dict = get_action('datastore_search')({},{'id': resource['id'], 'limit': 0})
+        fields = datastore_dict.get('fields')
+        for field in fields:
+            if field.get('id') == 'latitude' or field.get('id') == 'longitude':
+                if field.get('type') == 'numeric':
+                    flag_count = flag_count + 1
+            if flag_count == 2:
+                get_action('create_geom_columns')(
+                    None,
+                    {
+                        'resource_id': resource['id'],
+                        'populate': True,
+                        'index': True,
+                        # The dataset fields containing the latitude and longitude columns.
+                        'latitude_field': 'latitude',
+                        'longitude_field': 'longitude'
+                    }
+                )
+                logger.info('Geom columns created and populated')
+                break
+    except:
+        logger.info('Datastore not found for the resource')
+
     logger.info('Express Load completed')
 
 
