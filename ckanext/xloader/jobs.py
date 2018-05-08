@@ -286,7 +286,7 @@ def xloader_data_into_datastore_(input, job_dict):
                     logger.info('Geom columns created and populated')
                     break
                 except:
-                    logger.error('Error in create_geom_columns action')
+                    logger.error('error in action call to create_geom_columns')
                     break
 
     logger.info('Express Load completed')
