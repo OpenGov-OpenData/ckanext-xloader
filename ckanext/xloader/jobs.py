@@ -9,6 +9,9 @@ import datetime
 import traceback
 import sys
 
+import subprocess
+from os import path
+
 import requests
 from rq import get_current_job
 import sqlalchemy as sa
@@ -35,6 +38,7 @@ MAX_CONTENT_LENGTH = config.get('ckanext.xloader.max_content_length') or 1e9
 CHUNK_SIZE = 16 * 1024  # 16kb
 DOWNLOAD_TIMEOUT = 30
 
+DATASTORE_CACHE_DIR = config.get('datastore_cache_dir')
 
 # 'api_key': user['apikey'],
 # 'job_type': 'push_to_datastore',
@@ -276,6 +280,16 @@ def xloader_data_into_datastore_(input, job_dict):
         logger.info('Finished loading with messytables')
 
     tmp_file.close()
+
+    # Purge nginx cache
+    if DATASTORE_CACHE_DIR:
+        base_path = path.abspath(path.dirname(__file__))
+        purge_script = path.join(base_path, 'nginx-cache-purge.sh')
+
+        purge_params = [purge_script, resource_id, DATASTORE_CACHE_DIR]
+        purge_process = subprocess.Popen(purge_params, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        purge_result = purge_process.stdout.read()
+        logger.info('Purge cache: {purge_result}'.format(purge_result=purge_result))
 
     logger.info('Express Load completed')
 
