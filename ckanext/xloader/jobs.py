@@ -183,7 +183,9 @@ def xloader_data_into_datastore_(input, job_dict):
             # Retry for 404 in case file isn't ready in cloud storage.
             wait = 1
             while wait < 120 and response.status_code in [202, 404]:
-                logger.info('Retrying after {}s'.format(wait))
+                retry_msg = 'HTTP status: {}, Retrying after {}s' \
+                    .format(response.status_code, wait)
+                logger.info(retry_msg)
                 time.sleep(wait)
                 response = get_url()
                 wait *= 3
