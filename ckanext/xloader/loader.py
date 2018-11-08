@@ -71,13 +71,23 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
     from ckan import model
     context = {'model': model, 'ignore_auth': True}
     resource_dict = p.toolkit.get_action('resource_show')(context, { u'id': resource_id })
+
+    def resource_patch(body):
+        context = {'model': model, 'ignore_auth': True}
+        resource_dict = p.toolkit.get_action('resource_patch')(context, body)
+        return resource_dict
+
+
     # logger.info(resource_dict)
     import_resource_to_opengov({
         'backend': config.get('ckanext.xloader.opengov.backend'),
         'entity_id': config.get('ckanext.xloader.opengov.entity_id'),
         'api_key': config.get('ckanext.xloader.opengov.api_key')
         },
-        csv_filepath, resource_dict, logger
+        csv_filepath,
+        resource_dict,
+        logger,
+        resource_patch
     )
     logger.info("Done importing to OpenGov")
 

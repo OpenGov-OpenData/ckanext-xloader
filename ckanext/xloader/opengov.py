@@ -185,12 +185,11 @@ class OpenGov():
 
 
 
-def import_resource_to_opengov(config, file_path, resource_dict, logger=None):
+def import_resource_to_opengov(config, file_path, resource_dict, logger=None, resource_patch=None):
   verbose = True
 
 
   OpenGovCore = OpenGov(config.get('backend'), config.get('api_key'), config.get('entity_id'))
-
 
 
   # Get/Create transaction dataset
@@ -200,14 +199,22 @@ def import_resource_to_opengov(config, file_path, resource_dict, logger=None):
   #   print 'Dataset "%s" exists updating' % transaction_dataset.get('name')
   # else:
   #  transaction_dataset = self.opengov.transaction_datasets("POST", None, { "name": dist.get("title") }, verbose=verbose)
+  # "id": resource_dict.get("id"),
 
-  transaction_dataset = OpenGovCore.transaction_datasets("POST", None, { "name": resource_dict.get("name") }, verbose=verbose)
+  transaction_dataset_id = resource_dict.get('opengov_id');
+  logger.info('Transaction ID: "%s"' % transaction_dataset_id);
+  logger.info('Resource Dict: "%s"' % resource_dict)
+
+  if not transaction_dataset_id:
+    transaction_dataset = OpenGovCore.transaction_datasets("POST", None, {"name": resource_dict.get("name") }, verbose=verbose);
+    transaction_dataset_id = transaction_dataset.get('id')
+    resource_dict = resource_patch({ 'id': resource_dict.get('id'), 'opengov_id': transaction_dataset_id });
 
   # Upload Data
-  upload_batch = OpenGovCore.upload_batches("POST", transaction_dataset.get('id'), { "name": resource_dict.get("name") }, verbose=verbose)
+  upload_batch = OpenGovCore.upload_batches("POST", transaction_dataset_id, { "name": resource_dict.get("name") }, verbose=verbose)
 
   upload_file_path, upload_file_name = os.path.split(resource_dict.get('url'))
-  upload = OpenGovCore.uploads("POST", "%s&dataset_id=%s" % (upload_batch.get('id'), transaction_dataset.get('id')), { "upload_file_name": upload_file_name }, verbose=verbose)
+  upload = OpenGovCore.uploads("POST", "%s&dataset_id=%s" % (upload_batch.get('id'), transaction_dataset_id), { "upload_file_name": upload_file_name }, verbose=verbose)
 
   OpenGovCore.s3("PUT", upload.get('file_upload_url'), file_path)
 
@@ -264,7 +271,7 @@ def import_resource_to_opengov(config, file_path, resource_dict, logger=None):
 
   logger.info(body)
 
-  OpenGovCore.transaction_datasets("PUT", transaction_dataset.get('id'), body, verbose=verbose)
+  OpenGovCore.transaction_datasets("PUT", transaction_dataset_id, body, verbose=verbose)
 
   OpenGovCore.upload_batches("PUT", upload_batch.get('id'), { "run_append_job": True }, verbose=verbose)
 

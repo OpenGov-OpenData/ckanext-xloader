@@ -168,7 +168,8 @@ class xloaderPlugin(plugins.SingletonPlugin, plugins.toolkit.DefaultDatasetForm)
         # our custom field
         schema['resources'].update({
             'amount_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
-            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ]
+            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
+            'opengov_id' : [ plugins.toolkit.get_validator('ignore_missing') ]
         })
         return schema
 
@@ -177,7 +178,8 @@ class xloaderPlugin(plugins.SingletonPlugin, plugins.toolkit.DefaultDatasetForm)
         # our custom field
         schema['resources'].update({
             'amount_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
-            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ]
+            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
+            'opengov_id' : [ plugins.toolkit.get_validator('ignore_missing') ]
         })
         return schema
 
@@ -185,7 +187,8 @@ class xloaderPlugin(plugins.SingletonPlugin, plugins.toolkit.DefaultDatasetForm)
         schema = super(xloaderPlugin, self).show_package_schema()
         schema['resources'].update({
             'amount_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
-            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ]
+            'date_column' : [ plugins.toolkit.get_validator('ignore_missing') ],
+            'opengov_id' : [ plugins.toolkit.get_validator('ignore_missing') ]
         })
         return schema
 
