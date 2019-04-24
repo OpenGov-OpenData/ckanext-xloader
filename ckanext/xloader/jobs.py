@@ -300,6 +300,37 @@ def xloader_data_into_datastore_(input, job_dict):
         purge_result = purge_process.stdout.read()
         logger.info('Purge cache: {result}'.format(result=purge_result))
 
+    try:
+        datastore_dict = get_action('datastore_search')({},{'id': resource['id'], 'limit': 0})
+        fields = datastore_dict.get('fields')
+        latitude_field = ''
+        longitude_field = ''
+        for field in fields:
+            if field.get('id').lower() in ['latitude', 'lat']:
+                if field.get('type') == 'numeric':
+                    latitude_field = field.get('id')
+            if field.get('id').lower() in ['longitude', 'long']:
+                if field.get('type') == 'numeric':
+                    longitude_field = field.get('id')
+        if latitude_field and longitude_field:
+            try:
+                get_action('create_geom_columns')(
+                    None,
+                    {
+                        'resource_id': resource['id'],
+                        'populate': True,
+                        'index': True,
+                        # The dataset fields containing the latitude and longitude columns.
+                        'latitude_field': latitude_field,
+                        'longitude_field': longitude_field
+                    }
+                )
+                logger.info('Geom columns created and populated')
+            except:
+                logger.error('Error during geom columns creation')
+    except:
+        logger.info('Datastore not found for the resource')
+
     logger.info('Express Load completed')
 
 
