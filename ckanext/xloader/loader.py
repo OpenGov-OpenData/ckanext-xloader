@@ -522,7 +522,10 @@ def _create_fulltext_trigger(connection, resource_id):
             table=identifier(resource_id)))
 
 def identifier(s):
-    return u'"' + s.replace(u'"', u'""').replace(u'\0', '') + u'"'
+    # "%" needs to be escaped, otherwise connection.execute thinks it is for
+    # substituting a bind parameter
+    return u'"' + s.replace(u'"', u'""').replace(u'\0', '').replace('%', '%%')\
+        + u'"'
 
 def literal_string(s):
     return u"'" + s.replace(u"'", u"''").replace(u'\0', '') + u"'"
