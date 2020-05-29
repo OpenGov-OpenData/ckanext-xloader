@@ -166,6 +166,10 @@ class xloaderPlugin(plugins.SingletonPlugin):
             'resource_data_xloader', '/dataset/{id}/resource_data/{resource_id}',
             controller='ckanext.xloader.controllers:ResourceDataController',
             action='resource_data', ckan_icon='cloud-upload')
+        m.connect(
+            'unsupported_format_xloader', '/dataset/{id}/unsupported_format/{resource_id}',
+            controller='ckanext.xloader.controllers:ResourceDataController',
+            action='unsupported_format', ckan_icon='cloud-upload')
         return m
 
     # ITemplateHelpers
@@ -173,6 +177,7 @@ class xloaderPlugin(plugins.SingletonPlugin):
     def get_helpers(self):
         return {
             'xloader_status': xloader_helpers.xloader_status,
-            'xloader_status_description':
-            xloader_helpers.xloader_status_description,
+            'xloader_status_description': xloader_helpers.xloader_status_description,
+            'xloader_check_resource_format': xloader_helpers.xloader_check_resource_format,
+            'xloader_get_valid_formats': xloader_helpers.xloader_get_valid_formats
         }
