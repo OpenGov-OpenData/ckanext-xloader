@@ -50,7 +50,7 @@ class ResourceDataController(p.toolkit.BaseController):
                                     'pkg_dict': pkg_dict,
                                 })
 
-    def get_resource_and_pkg_dict(sefl, id, resource_id):
+    def get_resource_and_pkg_dict(self, id, resource_id):
         try:
             p.toolkit.c.pkg_dict = p.toolkit.get_action('package_show')(
                 None, {'id': id}

@@ -1,4 +1,5 @@
 import ckan.plugins.toolkit as toolkit
+
 try:
     from ckan.common import config
 except ImportError:
@@ -15,16 +16,6 @@ def xloader_status(resource_id):
             'status': 'unknown'
         }
 
-
-def xloader_check_resource_format(res_format):
-    valid_formats = config.get('ckanext.xloader.formats')
-    if res_format is None:
-        return False
-    return res_format.lower() in valid_formats
-
-
-def xloader_get_valid_formats():
-    return config.get('ckanext.xloader.formats')
 
 
 def xloader_status_description(status):
