@@ -71,29 +71,6 @@ class TestNotify(object):
             'error': '{}',
         }
 
-
-class TestXloaderFormats():
-
-    def teardown(self):
-        XLoaderFormats.setup_formats()
-
-    def test_formats_config_exist(self):
-        formats = u'csv xml'
-        with changed_config(u'ckanext.xloader.formats', formats):
-            # Reread data from config
-            XLoaderFormats.setup_formats()
-            assert XLoaderFormats.get_xloader_formats() == formats.split()
-
-    def test_formats_config_not_setup(self):
-        assert XLoaderFormats.get_xloader_formats() == DEFAULT_FORMATS
-
-    def test_is_format_valid(self):
-        for res_format in DEFAULT_FORMATS:
-            assert XLoaderFormats.is_it_an_xloader_format(res_format)
-
-    def test_is_format_invalid(self):
-        assert not XLoaderFormats.is_it_an_xloader_format('json')
-
     # @helpers.mock_action('xloader_submit')
     # def test_does_not_submit_while_ongoing_job(self, mock_xloader_submit):
     #     dataset = factories.Dataset()
@@ -300,3 +277,26 @@ class TestXloaderFormats():
 
     #     # Not called
     #     eq_(len(mock_xloader_submit.mock_calls), 1)
+
+
+class TestXloaderFormats():
+
+    def teardown(self):
+        XLoaderFormats.setup_formats()
+
+    def test_formats_config_exist(self):
+        formats = u'csv xml'
+        with changed_config(u'ckanext.xloader.formats', formats):
+            # Reread data from config
+            XLoaderFormats.setup_formats()
+            assert XLoaderFormats.get_xloader_formats() == formats.split()
+
+    def test_formats_config_not_setup(self):
+        assert XLoaderFormats.get_xloader_formats() == DEFAULT_FORMATS
+
+    def test_is_format_valid(self):
+        for res_format in DEFAULT_FORMATS:
+            assert XLoaderFormats.is_it_an_xloader_format(res_format)
+
+    def test_is_format_invalid(self):
+        assert not XLoaderFormats.is_it_an_xloader_format('json')

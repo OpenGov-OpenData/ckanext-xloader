@@ -1,11 +1,5 @@
 import ckan.plugins.toolkit as toolkit
 
-try:
-    from ckan.common import config
-except ImportError:
-    # for ckan 2.7 and earlier
-    from pylons import config
-
 
 def xloader_status(resource_id):
     try:
@@ -15,7 +9,6 @@ def xloader_status(resource_id):
         return {
             'status': 'unknown'
         }
-
 
 
 def xloader_status_description(status):
