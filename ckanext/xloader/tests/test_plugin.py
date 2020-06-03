@@ -279,7 +279,7 @@ class TestNotify(object):
     #     eq_(len(mock_xloader_submit.mock_calls), 1)
 
 
-class TestXloaderFormats():
+class TestXloaderFormats(object):
 
     def teardown(self):
         XLoaderFormats.setup_formats()
