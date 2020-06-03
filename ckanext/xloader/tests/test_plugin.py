@@ -1,10 +1,10 @@
 import datetime
 
-# from nose.tools import eq_
-# import mock
+from ckanext.xloader.plugin import XLoaderFormats, DEFAULT_FORMATS
 
 import ckan.plugins as p
 from ckan.tests import helpers, factories
+from ckan.tests.helpers import changed_config
 
 
 class TestNotify(object):
@@ -277,3 +277,26 @@ class TestNotify(object):
 
     #     # Not called
     #     eq_(len(mock_xloader_submit.mock_calls), 1)
+
+
+class TestXloaderFormats(object):
+
+    def teardown(self):
+        XLoaderFormats.setup_formats()
+
+    def test_formats_config_exist(self):
+        formats = u'csv xml'
+        with changed_config(u'ckanext.xloader.formats', formats):
+            # Reread data from config
+            XLoaderFormats.setup_formats()
+            assert XLoaderFormats.get_xloader_formats() == formats.split()
+
+    def test_formats_config_not_setup(self):
+        assert XLoaderFormats.get_xloader_formats() == DEFAULT_FORMATS
+
+    def test_is_format_valid(self):
+        for res_format in DEFAULT_FORMATS:
+            assert XLoaderFormats.is_it_an_xloader_format(res_format)
+
+    def test_is_format_invalid(self):
+        assert not XLoaderFormats.is_it_an_xloader_format('json')

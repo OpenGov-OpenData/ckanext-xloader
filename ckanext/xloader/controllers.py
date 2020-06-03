@@ -23,15 +23,7 @@ class ResourceDataController(p.toolkit.BaseController):
                 resource_id=resource_id
             )
 
-        try:
-            p.toolkit.c.pkg_dict = p.toolkit.get_action('package_show')(
-                None, {'id': id}
-            )
-            p.toolkit.c.resource = p.toolkit.get_action('resource_show')(
-                None, {'id': resource_id}
-            )
-        except (p.toolkit.ObjectNotFound, p.toolkit.NotAuthorized):
-            p.toolkit.abort(404, _('Resource not found'))
+        resource, pkg_dict = self.get_resource_and_pkg_dict(id, resource_id)
 
         try:
             xloader_status = p.toolkit.get_action('xloader_status')(
@@ -45,6 +37,27 @@ class ResourceDataController(p.toolkit.BaseController):
         return p.toolkit.render('xloader/resource_data.html',
                                 extra_vars={
                                     'status': xloader_status,
-                                    'resource': p.toolkit.c.resource,
-                                    'pkg_dict': p.toolkit.c.pkg_dict,
+                                    'resource': resource,
+                                    'pkg_dict': pkg_dict,
                                 })
+
+    def unsupported_format(self, id, resource_id):
+
+        resource, pkg_dict = self.get_resource_and_pkg_dict(id, resource_id)
+        return p.toolkit.render('xloader/unsupported_format.html',
+                                extra_vars={
+                                    'resource': resource,
+                                    'pkg_dict': pkg_dict,
+                                })
+
+    def get_resource_and_pkg_dict(self, id, resource_id):
+        try:
+            p.toolkit.c.pkg_dict = p.toolkit.get_action('package_show')(
+                None, {'id': id}
+            )
+            p.toolkit.c.resource = p.toolkit.get_action('resource_show')(
+                None, {'id': resource_id}
+            )
+        except (p.toolkit.ObjectNotFound, p.toolkit.NotAuthorized):
+            p.toolkit.abort(404, _('Resource not found'))
+        return p.toolkit.c.resource, p.toolkit.c.pkg_dict
