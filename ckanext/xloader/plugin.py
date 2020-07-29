@@ -32,7 +32,11 @@ class XLoaderFormats(object):
 
     @classmethod
     def setup_formats(cls):
-        cls._formats = DEFAULT_FORMATS
+        cls._formats = config.get('ckanext.xloader.formats')
+        if cls._formats is not None:
+            cls._formats = cls._formats.lower().split()
+        else:
+            cls._formats = DEFAULT_FORMATS
 
     @classmethod
     def is_it_an_xloader_format(cls, format_):
