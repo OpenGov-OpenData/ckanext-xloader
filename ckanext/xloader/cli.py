@@ -180,7 +180,7 @@ class xloaderCommand(cli.CkanCommand):
         # import here, so that that loggers are setup
         from ckanext.xloader.plugin import XLoaderFormats
 
-        if not XLoaderFormats.is_it_an_xloader_format(resource['format']):
+        if not XLoaderFormats.is_auto_upload_to_datastore_available(resource['format']):
             print(' ' * indent +
                   'Skipping resource {r[id]} because format "{r[format]}" is '
                   'not configured to be xloadered'.format(r=resource))

@@ -2,6 +2,7 @@ from ckan import model
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 from ckan.common import config
+from pycparser.c_ast import Default
 
 from ckanext.xloader import action, auth
 import ckanext.xloader.helpers as xloader_helpers
@@ -39,12 +40,16 @@ class XLoaderFormats(object):
             cls._formats = DEFAULT_FORMATS
 
     @classmethod
-    def is_it_an_xloader_format(cls, format_):
+    def is_auto_upload_to_datastore_available(cls, format_):
         if not cls._formats:
             cls.setup_formats()
         if not format_:
             return False
         return format_.lower() in cls._formats
+
+    @classmethod
+    def is_upload_to_datastore_available(cls, format_):
+        return format_.lower() in DEFAULT_FORMATS
 
 
 class xloaderPlugin(plugins.SingletonPlugin):
@@ -110,7 +115,7 @@ class xloaderPlugin(plugins.SingletonPlugin):
                 # 1 parameter
                 context = {'model': model, 'ignore_auth': True,
                            'defer_commit': True}
-                if not XLoaderFormats.is_it_an_xloader_format(entity.format):
+                if not XLoaderFormats.is_auto_upload_to_datastore_available(entity.format):
                     log.debug('Skipping xloading resource {r.id} because '
                               'format "{r.format}" is not configured to be '
                               'xloadered'
@@ -189,6 +194,6 @@ class xloaderPlugin(plugins.SingletonPlugin):
         return {
             'xloader_status': xloader_helpers.xloader_status,
             'xloader_status_description': xloader_helpers.xloader_status_description,
-            'xloader_check_resource_format': XLoaderFormats.is_it_an_xloader_format,
+            'is_upload_to_datastore_available': XLoaderFormats.is_upload_to_datastore_available,
             'xloader_get_valid_formats': XLoaderFormats.get_xloader_formats
         }

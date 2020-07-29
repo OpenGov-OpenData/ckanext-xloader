@@ -5,6 +5,7 @@ from ckanext.xloader.plugin import XLoaderFormats, DEFAULT_FORMATS
 import ckan.plugins as p
 from ckan.tests import helpers, factories
 from ckan.tests.helpers import changed_config
+from nose.tools import assert_true, assert_false, assert_list_equal
 
 
 class TestNotify(object):
@@ -279,24 +280,33 @@ class TestNotify(object):
     #     eq_(len(mock_xloader_submit.mock_calls), 1)
 
 
-class TestXloaderFormats(object):
+class TestXloaderFormatsUpload(object):
 
     def teardown(self):
-        XLoaderFormats.setup_formats()
+        XLoaderFormats._formats = None
 
     def test_formats_config_exist(self):
         formats = u'csv xml'
         with changed_config(u'ckanext.xloader.formats', formats):
             # Reread data from config
             XLoaderFormats.setup_formats()
-            assert XLoaderFormats.get_xloader_formats() == formats.split()
+            assert_list_equal(XLoaderFormats.get_xloader_formats(), formats.split())
 
     def test_formats_config_not_setup(self):
-        assert XLoaderFormats.get_xloader_formats() == DEFAULT_FORMATS
+        assert_list_equal(XLoaderFormats.get_xloader_formats(), DEFAULT_FORMATS)
 
-    def test_is_format_valid(self):
-        for res_format in DEFAULT_FORMATS:
-            assert XLoaderFormats.is_it_an_xloader_format(res_format)
+    def test_is_format_auto_upload_available(self):
+        formats = u'csv xml'
+        with changed_config(u'ckanext.xloader.formats', formats):
+            for res_format in DEFAULT_FORMATS:
+                available = XLoaderFormats.is_auto_upload_to_datastore_available(res_format)
+                if res_format in formats.split():
+                    assert_true(available)
+                else:
+                    assert_false(available)
 
-    def test_is_format_invalid(self):
-        assert not XLoaderFormats.is_it_an_xloader_format('json')
+    def test_is_format_upload_available(self):
+        formats = u'csv xml'
+        with changed_config(u'ckanext.xloader.formats', formats):
+            for res_format in DEFAULT_FORMATS:
+                assert_true(XLoaderFormats.is_upload_to_datastore_available(res_format))
