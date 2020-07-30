@@ -286,7 +286,7 @@ class TestXloaderFormatsUpload(object):
         XLoaderFormats._formats = None
 
     def test_formats_config_exist(self):
-        formats = u'csv xml'
+        formats = u'csv tsv'
         with changed_config(u'ckanext.xloader.formats', formats):
             # Reread data from config
             XLoaderFormats.setup_formats()
@@ -296,7 +296,7 @@ class TestXloaderFormatsUpload(object):
         assert_list_equal(XLoaderFormats.get_xloader_formats(), DEFAULT_FORMATS)
 
     def test_is_format_auto_upload_available(self):
-        formats = u'csv xml'
+        formats = u'csv tsv'
         with changed_config(u'ckanext.xloader.formats', formats):
             for res_format in DEFAULT_FORMATS:
                 available = XLoaderFormats.is_auto_upload_to_datastore_available(res_format)
@@ -306,7 +306,7 @@ class TestXloaderFormatsUpload(object):
                     assert_false(available)
 
     def test_is_format_upload_available(self):
-        formats = u'csv xml'
+        formats = u'csv tsv'
         with changed_config(u'ckanext.xloader.formats', formats):
             for res_format in DEFAULT_FORMATS:
                 assert_true(XLoaderFormats.is_upload_to_datastore_available(res_format))

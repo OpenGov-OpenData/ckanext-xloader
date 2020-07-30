@@ -2,7 +2,6 @@ from ckan import model
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 from ckan.common import config
-from pycparser.c_ast import Default
 
 from ckanext.xloader import action, auth
 import ckanext.xloader.helpers as xloader_helpers
