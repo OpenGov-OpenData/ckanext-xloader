@@ -1,14 +1,15 @@
 {% extends "package/resource_edit_base.html" %}
 
 {% block secondary_content %}
-    {{ super() }}
+  {{ super() }}
 {% endblock %}
 
 {% block primary_content_inner %}
-<div>
-    <p> Resource format <b>{{ resource.format }}</b> is not supported by xloader
-        and can not be uploaded to DataStore </p>
-    <p> Applicable formats:  <b> {{ h.xloader_get_valid_formats() }} </b></p>
-
-</div>
+<h1 class="hide-heading">DataStore</h1>
+<p>
+  Resource format <b>{{ resource.format }}</b> is not supported by xloader and can not be uploaded to DataStore
+</p>
+<p>
+  {{ _('Supported Formats:') }} {{ h.xloader_get_valid_formats() | join(', ') }}
+</p>
 {% endblock %}
