@@ -2,7 +2,7 @@
 
 {% block inner_primary_nav %}
   {{ super() }}
-    {% if h.xloader_check_resource_format(res.format) %}
+    {% if h.is_upload_to_datastore_available(res.format) %}
       {{ h.build_nav_icon('resource_data_xloader', _('DataStore'), id=pkg.name, resource_id=res.id) }}
     {% else %}
       {{ h.build_nav_icon('unsupported_format_xloader', _('DataStore'), id=pkg.name, resource_id=res.id) }}
