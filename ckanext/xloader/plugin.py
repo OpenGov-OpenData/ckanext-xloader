@@ -22,18 +22,33 @@ DEFAULT_FORMATS = [
 
 
 class XLoaderFormats(object):
-    formats = None
+    _formats = None
+
     @classmethod
-    def is_it_an_xloader_format(cls, format_):
-        if cls.formats is None:
-            cls._formats = config.get('ckanext.xloader.formats')
-            if cls._formats is not None:
-                cls._formats = cls._formats.lower().split()
-            else:
-                cls._formats = DEFAULT_FORMATS
+    def get_xloader_formats(cls):
+        if cls._formats is None:
+            cls.setup_formats()
+        return cls._formats
+
+    @classmethod
+    def setup_formats(cls):
+        cls._formats = config.get('ckanext.xloader.formats')
+        if cls._formats is not None:
+            cls._formats = cls._formats.lower().split()
+        else:
+            cls._formats = DEFAULT_FORMATS
+
+    @classmethod
+    def is_auto_upload_to_datastore_available(cls, format_):
+        if not cls._formats:
+            cls.setup_formats()
         if not format_:
             return False
         return format_.lower() in cls._formats
+
+    @classmethod
+    def is_upload_to_datastore_available(cls, format_):
+        return format_.lower() in DEFAULT_FORMATS
 
 
 class xloaderPlugin(plugins.SingletonPlugin):
@@ -99,7 +114,7 @@ class xloaderPlugin(plugins.SingletonPlugin):
                 # 1 parameter
                 context = {'model': model, 'ignore_auth': True,
                            'defer_commit': True}
-                if not XLoaderFormats.is_it_an_xloader_format(entity.format):
+                if not XLoaderFormats.is_auto_upload_to_datastore_available(entity.format):
                     log.debug('Skipping xloading resource {r.id} because '
                               'format "{r.format}" is not configured to be '
                               'xloadered'
@@ -166,6 +181,10 @@ class xloaderPlugin(plugins.SingletonPlugin):
             'resource_data_xloader', '/dataset/{id}/resource_data/{resource_id}',
             controller='ckanext.xloader.controllers:ResourceDataController',
             action='resource_data', ckan_icon='cloud-upload')
+        m.connect(
+            'unsupported_format_xloader', '/dataset/{id}/unsupported_format/{resource_id}',
+            controller='ckanext.xloader.controllers:ResourceDataController',
+            action='unsupported_format', ckan_icon='cloud-upload')
         return m
 
     # ITemplateHelpers
@@ -173,6 +192,7 @@ class xloaderPlugin(plugins.SingletonPlugin):
     def get_helpers(self):
         return {
             'xloader_status': xloader_helpers.xloader_status,
-            'xloader_status_description':
-            xloader_helpers.xloader_status_description,
+            'xloader_status_description': xloader_helpers.xloader_status_description,
+            'is_upload_to_datastore_available': XLoaderFormats.is_upload_to_datastore_available,
+            'xloader_get_valid_formats': XLoaderFormats.get_xloader_formats
         }
