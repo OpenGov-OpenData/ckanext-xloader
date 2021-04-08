@@ -13,3 +13,7 @@ def get_blueprints():
 @xloader.route("/dataset/<id>/resource_data/<resource_id>", methods=("GET", "POST"))
 def resource_data(id, resource_id):
     return utils.resource_data(id, resource_id)
+
+@xloader.route("/dataset/<id>/unsupported_format/<resource_id>")
+def unsupported_format(id, resource_id):
+    return utils.unsupported_format(id, resource_id)
