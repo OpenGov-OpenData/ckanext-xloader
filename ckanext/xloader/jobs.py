@@ -182,9 +182,6 @@ def xloader_data_into_datastore_(input, job_dict):
             fields=fields,
             resource_id=resource['id'],
             logger=logger)
-        update_resource(resource={'id': resource['id'], 'hash': resource['hash']},
-                        patch_only=True)
-        logger.info('File Hash updated for resource: {}'.format(resource['hash']))
 
     def messytables_load():
         try:
@@ -199,9 +196,6 @@ def xloader_data_into_datastore_(input, job_dict):
             resource_id=resource['id'], logger=logger)
         set_datastore_active(data, resource, logger)
         logger.info('Finished loading with messytables')
-        update_resource(resource={'id': resource['id'], 'hash': resource['hash']},
-                        patch_only=True)
-        logger.info('File Hash updated for resource: {}'.format(resource['hash']))
 
     # Load it
     logger.info('Loading CSV')
@@ -371,6 +365,11 @@ def set_datastore_active(data, resource, logger):
     logger.info(
         'Setting resource.datastore_contains_all_records_of_source_file = {}'
         .format(data.get('datastore_contains_all_records_of_source_file')))
+
+    if resource.get('hash'):
+        data['hash'] = resource.get('hash')
+        logger.info(
+            'File Hash updated for resource: {}'.format(data['hash']))
     set_resource_metadata(update_dict=data)
 
 
