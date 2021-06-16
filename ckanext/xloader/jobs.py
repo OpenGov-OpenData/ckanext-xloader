@@ -369,7 +369,7 @@ def set_datastore_active(data, resource, logger):
     if resource.get('hash'):
         data['hash'] = resource.get('hash')
         logger.info(
-            'File Hash updated for resource: {}'.format(data['hash']))
+            'Setting File Hash for resource to {}'.format(data['hash']))
     set_resource_metadata(update_dict=data)
 
 

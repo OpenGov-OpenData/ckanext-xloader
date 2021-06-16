@@ -42,7 +42,7 @@ def resource_data(id, resource_id):
     )
 
 
-def unsupported_format(self, id, resource_id):
+def unsupported_format(id, resource_id):
     try:
         p.toolkit.c.pkg_dict = p.toolkit.get_action("package_show")(None, {"id": id})
         p.toolkit.c.resource = p.toolkit.get_action("resource_show")(
