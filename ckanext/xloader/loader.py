@@ -81,6 +81,9 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
     except csv.Error:
         logger.warning('Could not determine delimiter from file, use default ","')
         delimiter = ','
+    except UnicodeDecodeError as e:
+        raise LoaderError('Could not determine delimiter from file: {}'
+                          .format(e))
 
     # Setup the converters that run when you iterate over the row_set.
     # With pgloader only the headers will be iterated over.
