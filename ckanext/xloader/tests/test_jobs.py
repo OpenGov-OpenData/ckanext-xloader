@@ -80,9 +80,8 @@ def mock_actions(func):
 
     return make_decorator(func)(wrapper)
 
-
 @pytest.mark.skip
-@pytest.mark.usefixtures("full_reset", "with_plugins")
+@pytest.mark.usefixtures("with_plugins")
 @pytest.mark.ckan_config("ckan.plugins", "datastore xloader")
 class TestxloaderDataIntoDatastore(object):
 
@@ -91,7 +90,7 @@ class TestxloaderDataIntoDatastore(object):
         self.host = "www.ckan.org"
         self.api_key = "my-fake-key"
         self.resource_id = "foo-bar-42"
-        res = factories.Resource(id=self.resource_id)
+        factories.Resource(id=self.resource_id)
         jobs_db.init(config, echo=False)
         # drop test table
         engine, conn = self.get_datastore_engine_and_connection()
@@ -165,7 +164,7 @@ class TestxloaderDataIntoDatastore(object):
 
     def get_datastore_table(self):
         engine, conn = self.get_datastore_engine_and_connection()
-        meta = MetaData(bind=engine, reflect=True)
+        meta = MetaData(bind=engine)
         table = Table(
             self.resource_id, meta, autoload=True, autoload_with=engine
         )
@@ -286,7 +285,7 @@ class TestxloaderDataIntoDatastore(object):
 
         job = jobs_db.get_job(job_id)
         assert job["status"] == u"complete"
-        assert job["error"] == None
+        assert job["error"] is None
 
         # Check ANALYZE was run
         last_analyze = self.get_time_of_last_analyze()
@@ -364,7 +363,7 @@ class TestxloaderDataIntoDatastore(object):
 
         job = jobs_db.get_job(job_id)
         assert job["status"] == u"complete"
-        assert job["error"] == None
+        assert job["error"] is None
 
         # Check ANALYZE was run
         last_analyze = self.get_time_of_last_analyze()
@@ -451,7 +450,7 @@ class TestxloaderDataIntoDatastore(object):
                 return_value=mock.Mock(id=job_id),
             ):
                 result = jobs.xloader_data_into_datastore(data)
-        assert result == None
+        assert result is None
 
         # Check it said it was successful
         assert (
@@ -510,7 +509,7 @@ class TestxloaderDataIntoDatastore(object):
         assert copy_error_index, "Missing COPY error"
 
         # check messytable portion of the logs
-        logs = Logs(logs[copy_error_index + 1 :])
+        logs = Logs(logs[copy_error_index + 1:])
         assert logs[0] == (u"INFO", u"Trying again with messytables")
         logs.assert_no_errors()
 
@@ -569,7 +568,7 @@ class TestxloaderDataIntoDatastore(object):
 
         job = jobs_db.get_job(job_id)
         assert job["status"] == u"complete"
-        assert job["error"] == None
+        assert job["error"] is None
 
     @mock_actions
     @responses.activate
