@@ -160,6 +160,12 @@ def xloader_data_into_datastore_(input, job_dict):
             and not data.get('ignore_hash')):
         logger.info('Ignoring resource - the file hash hasn\'t changed: '
                     '{hash}.'.format(hash=file_hash))
+        contains_all_records = data.get(
+            'datastore_contains_all_records_of_source_file', True)
+        if resource.get('datastore_active') and contains_all_records:
+            set_resource_metadata(
+                {'resource_id': resource['id'],
+                 'datastore_contains_all_records_of_source_file': contains_all_records})
         return
     logger.info('File hash: %s', file_hash)
     resource['hash'] = file_hash
@@ -370,9 +376,12 @@ def set_datastore_active(data, resource, logger):
 
     data['datastore_active'] = True
     logger.info('Setting resource.datastore_active = True')
+    contains_all_records = data.get(
+        'datastore_contains_all_records_of_source_file', True)
+    data['datastore_contains_all_records_of_source_file'] = contains_all_records
     logger.info(
-        'Setting resource.datastore_contains_all_records_of_source_file = {}'
-        .format(data.get('datastore_contains_all_records_of_source_file')))
+        'Setting resource.datastore_contains_all_records_of_source_file = %s',
+        contains_all_records)
 
     if resource.get('hash'):
         data['hash'] = resource.get('hash')
