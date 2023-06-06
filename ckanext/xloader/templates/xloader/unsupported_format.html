@@ -5,9 +5,6 @@
 {% block primary_content_inner %}
   <h1 class="hide-heading">DataStore</h1>
   <p>
-    Resource format <b>{{ resource.format }}</b> is not supported by xloader and can not be uploaded to DataStore
-  </p>
-  <p>
-    {{ _('Supported Formats') }}: {{ h.xloader_get_valid_formats() | join(', ') }}
+    Skipping resource {{ resource.id }} because format "{{ resource.format }}" is not configured to be xloadered
   </p>
 {% endblock %}

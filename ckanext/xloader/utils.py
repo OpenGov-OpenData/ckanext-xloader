@@ -1,3 +1,15 @@
+# encoding: utf-8
+
+import json
+import datetime
+
+from ckan import model
+from ckan.lib import search
+from collections import defaultdict
+from decimal import Decimal
+
+from six import text_type as str
+
 import ckan.plugins as p
 
 
@@ -77,3 +89,154 @@ def get_xloader_user_apitoken():
 
     site_user = p.toolkit.get_action('get_site_user')({'ignore_auth': True}, {})
     return site_user["apikey"]
+
+
+def set_resource_metadata(update_dict):
+    '''
+    Set appropriate datastore_active flag on CKAN resource.
+
+    Called after creation or deletion of DataStore table.
+    '''
+    # We're modifying the resource extra directly here to avoid a
+    # race condition, see issue #3245 for details and plan for a
+    # better fix
+
+    q = model.Session.query(model.Resource). \
+        filter(model.Resource.id == update_dict['resource_id'])
+    resource = q.one()
+
+    # update extras in database for record
+    extras = resource.extras
+    extras.update(update_dict)
+    q.update({'extras': extras}, synchronize_session=False)
+
+    # TODO: Remove resource_revision_table when dropping support for 2.8
+    if hasattr(model, 'resource_revision_table'):
+        model.Session.query(model.resource_revision_table).filter(
+            model.ResourceRevision.id == update_dict['resource_id'],
+            model.ResourceRevision.current is True
+        ).update({'extras': extras}, synchronize_session=False)
+    model.Session.commit()
+
+    # get package with updated resource from solr
+    # find changed resource, patch it and reindex package
+    psi = search.PackageSearchIndex()
+    solr_query = search.PackageSearchQuery()
+    q = {
+        'q': 'id:"{0}"'.format(resource.package_id),
+        'fl': 'data_dict',
+        'wt': 'json',
+        'fq': 'site_id:"%s"' % p.toolkit.config.get('ckan.site_id'),
+        'rows': 1
+    }
+    for record in solr_query.run(q)['results']:
+        solr_data_dict = json.loads(record['data_dict'])
+        for resource in solr_data_dict['resources']:
+            if resource['id'] == update_dict['resource_id']:
+                resource.update(update_dict)
+                psi.index_package(solr_data_dict)
+                break
+
+
+def column_count_modal(rows):
+    """ Return the modal value of columns in the row_set's
+    sample. This can be assumed to be the number of columns
+    of the table.
+
+    Copied from messytables.
+    """
+    counts = defaultdict(int)
+    for row in rows:
+        length = len([c for c in row if c != ''])
+        if length > 1:
+            counts[length] += 1
+    if not len(counts):
+        return 0
+    return max(list(counts.items()), key=lambda k_v: k_v[1])[0]
+
+
+def headers_guess(rows, tolerance=1):
+    """ Guess the offset and names of the headers of the row set.
+    This will attempt to locate the first row within ``tolerance``
+    of the mode of the number of rows in the row set sample.
+
+    The return value is a tuple of the offset of the header row
+    and the names of the columns.
+
+    Copied from messytables.
+    """
+    rows = list(rows)
+    modal = column_count_modal(rows)
+    for i, row in enumerate(rows):
+        length = len([c for c in row if c != ''])
+        if length >= modal - tolerance:
+            # TODO: use type guessing to check that this row has
+            # strings and does not conform to the type schema of
+            # the table.
+            return i, row
+    return 0, []
+
+
+TYPES = [int, bool, str, datetime.datetime, float, Decimal]
+
+
+def type_guess(rows, types=TYPES, strict=False):
+    """ The type guesser aggregates the number of successful
+    conversions of each column to each type, weights them by a
+    fixed type priority and select the most probable type for
+    each column based on that figure. It returns a list of
+    ``CellType``. Empty cells are ignored.
+
+    Strict means that a type will not be guessed
+    if parsing fails for a single cell in the column."""
+    guesses = []
+    if strict:
+        at_least_one_value = []
+        for ri, row in enumerate(rows):
+            diff = len(row) - len(guesses)
+            for _ in range(diff):
+                typesdict = {}
+                for type in types:
+                    typesdict[type] = 0
+                guesses.append(typesdict)
+                at_least_one_value.append(False)
+            for ci, cell in enumerate(row):
+                if not cell:
+                    continue
+                at_least_one_value[ci] = True
+                for type in list(guesses[ci].keys()):
+                    if not isinstance(cell, type):
+                        guesses[ci].pop(type)
+        # no need to set guessing weights before this
+        # because we only accept a type if it never fails
+        for i, guess in enumerate(guesses):
+            for type in guess:
+                guesses[i][type] = 1
+        # in case there were no values at all in the column,
+        # we just set the guessed type to string
+        for i, v in enumerate(at_least_one_value):
+            if not v:
+                guesses[i] = {str: 1}
+    else:
+        for i, row in enumerate(rows):
+            diff = len(row) - len(guesses)
+            for _ in range(diff):
+                guesses.append(defaultdict(int))
+            for i, cell in enumerate(row):
+                # add string guess so that we have at least one guess
+                guesses[i][str] = guesses[i].get(str, 1)
+                if not cell:
+                    continue
+                for type in types:
+                    if isinstance(cell, type):
+                        guesses[i][type] += 1
+        _columns = []
+    _columns = []
+    for guess in guesses:
+        # this first creates an array of tuples because we want the types to be
+        # sorted. Even though it is not specified, python chooses the first
+        # element in case of a tie
+        # See: http://stackoverflow.com/a/6783101/214950
+        guesses_tuples = [(t, guess[t]) for t in types if t in guess]
+        _columns.append(max(guesses_tuples, key=lambda t_n: t_n[1])[0])
+    return _columns

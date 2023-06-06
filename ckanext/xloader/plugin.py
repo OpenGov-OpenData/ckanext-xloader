@@ -1,12 +1,12 @@
+# encoding: utf-8
+
 import logging
 
-from ckan.plugins.toolkit import config
-import ckan.plugins as plugins
-import ckan.plugins.toolkit as toolkit
+from ckan import plugins
+from ckan.plugins import toolkit
 
-from ckanext.xloader import action, auth
-import ckanext.xloader.helpers as xloader_helpers
-from ckanext.xloader.loader import fulltext_function_exists, get_write_engine
+from . import action, auth, helpers as xloader_helpers, utils
+from .loader import fulltext_function_exists, get_write_engine
 
 log = logging.getLogger(__name__)
 
@@ -26,35 +26,19 @@ DEFAULT_FORMATS = [
 
 
 class XLoaderFormats(object):
-    _formats = None
-
-    @classmethod
-    def setup_formats(cls):
-        cls._formats = config.get("ckanext.xloader.formats")
-        if cls._formats is not None:
-            cls._formats = cls._formats.lower().split()
-        else:
-            cls._formats = DEFAULT_FORMATS
+    formats = None
 
     @classmethod
     def is_it_an_xloader_format(cls, format_):
-        if not cls._formats:
-            cls.setup_formats()
+        if cls.formats is None:
+            cls._formats = toolkit.config.get("ckanext.xloader.formats")
+            if cls._formats is not None:
+                cls._formats = cls._formats.lower().split()
+            else:
+                cls._formats = DEFAULT_FORMATS
         if not format_:
             return False
         return format_.lower() in cls._formats
-
-    @classmethod
-    def is_it_a_default_xloader_format(cls, format_):
-        if not format_:
-            return False
-        return format_.lower() in DEFAULT_FORMATS
-
-    @classmethod
-    def get_xloader_formats(cls):
-        if cls._formats is None:
-            cls.setup_formats()
-        return cls._formats
 
 
 class xloaderPlugin(plugins.SingletonPlugin):
@@ -156,29 +140,49 @@ class xloaderPlugin(plugins.SingletonPlugin):
         self._submit_to_xloader(resource_dict)
 
     # IResourceController
-    if toolkit.check_ckan_version("2.10"):
 
-        def after_resource_create(self, context, resource_dict):
-            self._submit_to_xloader(resource_dict)
+    def after_resource_create(self, context, resource_dict):
+        self._submit_to_xloader(resource_dict)
 
-        def before_resource_show(self, resource_dict):
-            resource_dict[
-                "datastore_contains_all_records_of_source_file"
-            ] = toolkit.asbool(
-                resource_dict.get("datastore_contains_all_records_of_source_file")
-            )
+    def before_resource_show(self, resource_dict):
+        resource_dict[
+            "datastore_contains_all_records_of_source_file"
+        ] = toolkit.asbool(
+            resource_dict.get("datastore_contains_all_records_of_source_file")
+        )
 
-    else:
+    def after_resource_update(self, context, resource_dict):
+        """ Check whether the datastore is out of sync with the
+        'datastore_active' flag. This can occur due to race conditions
+        like https://github.com/ckan/ckan/issues/4663
+        """
+        datastore_active = resource_dict.get('datastore_active', False)
+        try:
+            context = {'ignore_auth': True}
+            if toolkit.get_action('datastore_info')(
+                    context=context, data_dict={'id': resource_dict['id']}):
+                datastore_exists = True
+            else:
+                datastore_exists = False
+        except toolkit.ObjectNotFound:
+            datastore_exists = False
+
+        if datastore_active != datastore_exists:
+            # flag is out of sync with datastore; update it
+            utils.set_resource_metadata(
+                {'resource_id': resource_dict['id'],
+                 'datastore_active': datastore_exists})
+
+    if not toolkit.check_ckan_version("2.10"):
 
         def after_create(self, context, resource_dict):
-            self._submit_to_xloader(resource_dict)
+            self.after_resource_create(context, resource_dict)
 
         def before_show(self, resource_dict):
-            resource_dict[
-                "datastore_contains_all_records_of_source_file"
-            ] = toolkit.asbool(
-                resource_dict.get("datastore_contains_all_records_of_source_file")
-            )
+            self.before_resource_show(resource_dict)
+
+        def after_update(self, context, resource_dict):
+            self.after_resource_update(context, resource_dict)
 
     def _submit_to_xloader(self, resource_dict):
         context = {"ignore_auth": True, "defer_commit": True}
@@ -200,7 +204,7 @@ class xloaderPlugin(plugins.SingletonPlugin):
 
         try:
             log.debug(
-                "Submitting resource {0} to be xloadered".format(resource_dict["id"])
+                "Submitting resource %s to be xloadered", resource_dict["id"]
             )
             toolkit.get_action("xloader_submit")(
                 context,
@@ -238,6 +242,5 @@ class xloaderPlugin(plugins.SingletonPlugin):
         return {
             "xloader_status": xloader_helpers.xloader_status,
             "xloader_status_description": xloader_helpers.xloader_status_description,
-            "is_it_a_default_xloader_format": XLoaderFormats.is_it_a_default_xloader_format,
-            "xloader_get_valid_formats": XLoaderFormats.get_xloader_formats
+            "is_it_an_xloader_format": XLoaderFormats.is_it_an_xloader_format
         }

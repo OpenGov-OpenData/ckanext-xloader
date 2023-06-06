@@ -44,4 +44,10 @@ docs/_build/
 # editors
 .vscode
 
+ckan
+.rdp
+.noseids
+subdir/
+dump.rdb
+
 .DS_Store
