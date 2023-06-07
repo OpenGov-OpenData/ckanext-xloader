@@ -9,20 +9,20 @@ import json
 import datetime
 import traceback
 import sys
-import six
+from six import text_type as str
 
 from six.moves.urllib.parse import urlsplit
 import requests
 from rq import get_current_job
 import sqlalchemy as sa
 
-import ckan.model as model
+from ckan import model
 from ckan.plugins.toolkit import get_action, asbool, ObjectNotFound, config, check_ckan_version
-import ckan.lib.search as search
 
 from . import loader
 from . import db
 from .job_exceptions import JobError, HTTPError, DataTooBigError, FileCouldNotBeLoadedError
+from .utils import set_resource_metadata
 
 try:
     from ckan.lib.api_token import get_user_from_token
@@ -192,39 +192,42 @@ def xloader_data_into_datastore_(input, job_dict):
         #                 patch_only=True)
         # logger.info('File Hash updated for resource: %s', resource['hash'])
 
-    def messytables_load():
+    def tabulator_load():
         try:
             loader.load_table(tmp_file.name,
                               resource_id=resource['id'],
                               mimetype=resource.get('format'),
                               logger=logger)
         except JobError as e:
-            logger.error('Error during messytables load: %s', e)
+            logger.error('Error during tabulator load: %s', e)
             raise
         loader.calculate_record_count(
             resource_id=resource['id'], logger=logger)
         set_datastore_active(data, resource, logger)
-        logger.info('Finished loading with messytables')
+        logger.info('Finished loading with tabulator')
         # update_resource(resource={'id': resource['id'], 'hash': resource['hash']},
         #                 patch_only=True)
         # logger.info('File Hash updated for resource: %s', resource['hash'])
 
     # Load it
     logger.info('Loading CSV')
-    just_load_with_messytables = asbool(config.get(
-        'ckanext.xloader.just_load_with_messytables', False))
-    logger.info("'Just load with messytables' mode is: %s",
-                just_load_with_messytables)
+    # If ckanext.xloader.use_type_guessing is not configured, fall back to
+    # deprecated ckanext.xloader.just_load_with_messytables
+    use_type_guessing = asbool(config.get(
+        'ckanext.xloader.use_type_guessing', config.get(
+            'ckanext.xloader.just_load_with_messytables', False)))
+    logger.info("'use_type_guessing' mode is: %s",
+                use_type_guessing)
     try:
-        if just_load_with_messytables:
-            messytables_load()
+        if use_type_guessing:
+            tabulator_load()
         else:
             try:
                 direct_load()
             except JobError as e:
                 logger.warning('Load using COPY failed: %s', e)
-                logger.info('Trying again with messytables')
-                messytables_load()
+                logger.info('Trying again with tabulator')
+                tabulator_load()
     except FileCouldNotBeLoadedError as e:
         logger.warning('Loading excerpt for this format not supported.')
         logger.error('Loading file raised an error: %s', e)
@@ -250,7 +253,8 @@ def _download_resource_data(resource, data, api_key, logger):
     '''
     # check scheme
     url = resource.get('url')
-    scheme = urlsplit(url).scheme
+    url_parts = urlsplit(url)
+    scheme = url_parts.scheme
     if scheme not in ('http', 'https', 'ftp'):
         raise JobError(
             'Only http, https, and ftp resources may be fetched.'
@@ -269,7 +273,17 @@ def _download_resource_data(resource, data, api_key, logger):
             # otherwise we won't get file from private resources
             headers['Authorization'] = api_key
 
-        response = get_response(url, headers)
+            # Add a constantly changing parameter to bypass URL caching.
+            # If we're running XLoader, then either the resource has
+            # changed, or something went wrong and we want a clean start.
+            # Either way, we don't want a cached file.
+            download_url = url_parts._replace(
+                query='{}&nonce={}'.format(url_parts.query, time.time())
+            ).geturl()
+        else:
+            download_url = url
+
+        response = get_response(download_url, headers)
 
         cl = response.headers.get('content-length')
         if cl and int(cl) > MAX_CONTENT_LENGTH:
@@ -319,7 +333,7 @@ def _download_resource_data(resource, data, api_key, logger):
             "the data file", status_code=error.response.status_code,
             request_url=url, response=error)
     except requests.exceptions.Timeout:
-        logger.warning('URL time out after {0}s'.format(DOWNLOAD_TIMEOUT))
+        logger.warning('URL time out after %ss', DOWNLOAD_TIMEOUT)
         raise JobError('Connection timed out after {}s'.format(
                        DOWNLOAD_TIMEOUT))
     except requests.exceptions.RequestException as e:
@@ -341,7 +355,7 @@ def _download_resource_data(resource, data, api_key, logger):
 def get_response(url, headers):
     def get_url():
         kwargs = {'headers': headers, 'timeout': DOWNLOAD_TIMEOUT,
-                  'verify': SSL_VERIFY, 'stream': True} # just gets the headers for now
+                  'verify': SSL_VERIFY, 'stream': True}  # just gets the headers for now
         if 'ckan.download_proxy' in config:
             proxy = config.get('ckan.download_proxy')
             kwargs['proxies'] = {'http': proxy, 'https': proxy}
@@ -416,59 +430,6 @@ def callback_xloader_hook(result_url, api_key, job_dict):
         return False
 
     return result.status_code == requests.codes.ok
-
-
-def set_resource_metadata(update_dict):
-    '''
-    Set appropriate datastore_active flag on CKAN resource.
-
-    Called after creation or deletion of DataStore table.
-    '''
-    from ckan import model
-    # We're modifying the resource extra directly here to avoid a
-    # race condition, see issue #3245 for details and plan for a
-    # better fix
-    update_dict.update({
-        'datastore_active': update_dict.get('datastore_active', True),
-        'datastore_contains_all_records_of_source_file':
-        update_dict.get('datastore_contains_all_records_of_source_file', True)
-    })
-
-    q = model.Session.query(model.Resource). \
-        filter(model.Resource.id == update_dict['resource_id'])
-    resource = q.one()
-
-    # update extras in database for record
-    extras = resource.extras
-    extras.update(update_dict)
-    q.update({'extras': extras}, synchronize_session=False)
-
-    # TODO: Remove resource_revision_table when dropping support for 2.8
-    if hasattr(model, 'resource_revision_table'):
-        model.Session.query(model.resource_revision_table).filter(
-            model.ResourceRevision.id == update_dict['resource_id'],
-            model.ResourceRevision.current is True
-        ).update({'extras': extras}, synchronize_session=False)
-    model.Session.commit()
-
-    # get package with updated resource from solr
-    # find changed resource, patch it and reindex package
-    psi = search.PackageSearchIndex()
-    solr_query = search.PackageSearchQuery()
-    q = {
-        'q': 'id:"{0}"'.format(resource.package_id),
-        'fl': 'data_dict',
-        'wt': 'json',
-        'fq': 'site_id:"%s"' % config.get('ckan.site_id'),
-        'rows': 1
-    }
-    for record in solr_query.run(q)['results']:
-        solr_data_dict = json.loads(record['data_dict'])
-        for resource in solr_data_dict['resources']:
-            if resource['id'] == update_dict['resource_id']:
-                resource.update(update_dict)
-                psi.index_package(solr_data_dict)
-                break
 
 
 def validate_input(input):
@@ -594,14 +555,14 @@ class StoringHandler(logging.Handler):
         try:
             # Turn strings into unicode to stop SQLAlchemy
             # "Unicode type received non-unicode bind param value" warnings.
-            message = six.text_type(record.getMessage())
-            level = six.text_type(record.levelname)
-            module = six.text_type(record.module)
-            funcName = six.text_type(record.funcName)
+            message = str(record.getMessage())
+            level = str(record.levelname)
+            module = str(record.module)
+            funcName = str(record.funcName)
 
             conn.execute(db.LOGS_TABLE.insert().values(
                 job_id=self.task_id,
-                timestamp=datetime.datetime.now(),
+                timestamp=datetime.datetime.utcnow(),
                 message=message,
                 level=level,
                 module=module,
