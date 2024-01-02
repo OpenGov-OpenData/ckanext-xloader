@@ -262,6 +262,13 @@ def _download_resource_data(resource, data, api_key, logger):
 
     # fetch the resource data
     logger.info('Fetching from: {0}'.format(url))
+
+    # Wait before downloading if configured
+    if 'ckanext.xloader.download_delay' in config:
+        delay = int(config.get('ckanext.xloader.download_delay'))
+        logger.info('Waiting {0} seconds before download'.format(delay))
+        time.sleep(delay)
+
     tmp_file = get_tmp_file(url)
     length = 0
     m = hashlib.md5()
@@ -360,7 +367,6 @@ def get_response(url, headers):
             proxy = config.get('ckan.download_proxy')
             kwargs['proxies'] = {'http': proxy, 'https': proxy}
         return requests.get(url, **kwargs)
-    time.sleep(3)
     response = get_url()
     if response.status_code in [202, 404]:
         # Seen: https://data-cdfw.opendata.arcgis.com/datasets
