@@ -3,17 +3,50 @@
 import json
 import datetime
 
+from six import text_type as str, binary_type
+
 from ckan import model
 from ckan.lib import search
 from collections import defaultdict
 from decimal import Decimal
 
-from six import text_type as str
-
 import ckan.plugins as p
+from ckan.plugins.toolkit import config
+
+# resource.formats accepted by ckanext-xloader. Must be lowercase here.
+DEFAULT_FORMATS = [
+    "csv",
+    "application/csv",
+    "xls",
+    "xlsx",
+    "tsv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "ods",
+    "application/vnd.oasis.opendocument.spreadsheet",
+]
+
+from .job_exceptions import JobError
 
 
-def resource_data(id, resource_id):
+class XLoaderFormats(object):
+    formats = None
+
+    @classmethod
+    def is_it_an_xloader_format(cls, format_):
+        if cls.formats is None:
+            cls._formats = config.get("ckanext.xloader.formats")
+            if cls._formats is not None:
+                # use config value. preserves empty list as well.
+                cls._formats = cls._formats.lower().split()
+            else:
+                cls._formats = DEFAULT_FORMATS
+        if not format_:
+            return False
+        return format_.lower() in cls._formats
+
+
+def resource_data(id, resource_id, rows=None):
 
     if p.toolkit.request.method == "POST":
         try:
@@ -48,14 +81,16 @@ def resource_data(id, resource_id):
         xloader_status = {}
     except p.toolkit.NotAuthorized:
         return p.toolkit.abort(403, p.toolkit._("Not authorized to see this page"))
-
+    extra_vars = {
+        "status": xloader_status,
+        "resource": p.toolkit.c.resource,
+        "pkg_dict": p.toolkit.c.pkg_dict,
+    }
+    if rows:
+        extra_vars["rows"] = rows
     return p.toolkit.render(
         "xloader/resource_data.html",
-        extra_vars={
-            "status": xloader_status,
-            "resource": p.toolkit.c.resource,
-            "pkg_dict": p.toolkit.c.pkg_dict,
-        },
+        extra_vars=extra_vars,
     )
 
 
@@ -72,7 +107,7 @@ def unsupported_format(id, resource_id):
         extra_vars={
             "resource": p.toolkit.c.resource,
             "pkg_dict": p.toolkit.c.pkg_dict,
-        },
+        }
     )
 
 
@@ -102,6 +137,7 @@ def set_resource_metadata(update_dict):
     # better fix
 
     q = model.Session.query(model.Resource). \
+        with_for_update(of=model.Resource). \
         filter(model.Resource.id == update_dict['resource_id'])
     resource = q.one()
 
@@ -110,12 +146,6 @@ def set_resource_metadata(update_dict):
     extras.update(update_dict)
     q.update({'extras': extras}, synchronize_session=False)
 
-    # TODO: Remove resource_revision_table when dropping support for 2.8
-    if hasattr(model, 'resource_revision_table'):
-        model.Session.query(model.resource_revision_table).filter(
-            model.ResourceRevision.id == update_dict['resource_id'],
-            model.ResourceRevision.current is True
-        ).update({'extras': extras}, synchronize_session=False)
     model.Session.commit()
 
     # get package with updated resource from solr
@@ -177,7 +207,7 @@ def headers_guess(rows, tolerance=1):
     return 0, []
 
 
-TYPES = [int, bool, str, datetime.datetime, float, Decimal]
+TYPES = [int, bool, str, binary_type, datetime.datetime, float, Decimal]
 
 
 def type_guess(rows, types=TYPES, strict=False):
@@ -203,10 +233,10 @@ def type_guess(rows, types=TYPES, strict=False):
             for ci, cell in enumerate(row):
                 if not cell:
                     continue
-                at_least_one_value[ci] = True
                 for type in list(guesses[ci].keys()):
                     if not isinstance(cell, type):
                         guesses[ci].pop(type)
+                at_least_one_value[ci] = True if guesses[ci] else False
         # no need to set guessing weights before this
         # because we only accept a type if it never fails
         for i, guess in enumerate(guesses):
@@ -238,5 +268,17 @@ def type_guess(rows, types=TYPES, strict=False):
         # element in case of a tie
         # See: http://stackoverflow.com/a/6783101/214950
         guesses_tuples = [(t, guess[t]) for t in types if t in guess]
+        if not guesses_tuples:
+            raise JobError('Failed to guess types')
         _columns.append(max(guesses_tuples, key=lambda t_n: t_n[1])[0])
     return _columns
+
+
+def datastore_resource_exists(resource_id):
+    context = {'model': model, 'ignore_auth': True}
+    try:
+        response = p.toolkit.get_action('datastore_search')(context, dict(
+            id=resource_id, limit=0))
+    except p.toolkit.ObjectNotFound:
+        return False
+    return response or {'fields': []}

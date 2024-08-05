@@ -1,10 +1,11 @@
 {% ckan_extends %}
 
 {% block inner_primary_nav %}
-  {{ super() }}
-  {% if h.is_it_an_xloader_format(res.format) %}
-    {{ h.build_nav_icon('xloader.resource_data', _('DataStore'), id=pkg.name, resource_id=res.id) }}
-  {% else %}
-    {{ h.build_nav_icon('xloader.unsupported_format', _('DataStore'), id=pkg.name, resource_id=res.id) }}
-  {% endif %}
+    {{ super() }}
+    {% if h.is_resource_supported_by_xloader(res) %}
+      {{ h.build_nav_icon('xloader.resource_data', _('DataStore'), id=pkg.name, resource_id=res.id, icon='cloud-upload') }}
+    {% else %}
+      {{ h.build_nav_icon('xloader.unsupported_format', _('DataStore'), id=pkg.name, resource_id=res.id) }}
+    {% endif %}
+
 {% endblock %}
