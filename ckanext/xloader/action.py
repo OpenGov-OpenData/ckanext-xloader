@@ -10,7 +10,7 @@ import ckan.lib.navl.dictization_functions
 from ckan.logic import side_effect_free
 import ckan.plugins as p
 from dateutil.parser import parse as parse_date
-from six import text_type as str
+from dateutil.parser import isoparse as parse_iso_date
 
 import ckanext.xloader.schema
 
@@ -46,12 +46,12 @@ def xloader_submit(context, data_dict):
 
     :rtype: bool
     '''
+    p.toolkit.check_access('xloader_submit', context, data_dict)
+    custom_queue = data_dict.pop('queue', rq_jobs.DEFAULT_QUEUE_NAME)
     schema = context.get('schema', ckanext.xloader.schema.xloader_submit_schema())
     data_dict, errors = _validate(data_dict, schema, context)
     if errors:
         raise p.toolkit.ValidationError(errors)
-
-    p.toolkit.check_access('xloader_submit', context, data_dict)
 
     res_id = data_dict['resource_id']
     try:
@@ -99,8 +99,7 @@ def xloader_submit(context, data_dict):
                 for job in get_queue().get_jobs()
                 if 'xloader_to_datastore' in str(job)  # filter out test_job etc
             ]
-            updated = datetime.datetime.strptime(
-                existing_task['last_updated'], '%Y-%m-%dT%H:%M:%S.%f')
+            updated = parse_iso_date(existing_task['last_updated'])
             time_since_last_updated = datetime.datetime.utcnow() - updated
             if (res_id not in queued_res_ids
                     and time_since_last_updated > assume_task_stillborn_after):
@@ -151,15 +150,21 @@ def xloader_submit(context, data_dict):
             'original_url': resource_dict.get('url'),
         }
     }
-    timeout = config.get('ckanext.xloader.job_timeout', '3600')
+    if custom_queue != rq_jobs.DEFAULT_QUEUE_NAME:
+        # Don't automatically retry if it's a custom run
+        data['metadata']['tries'] = jobs.MAX_RETRIES
+
+    # Expand timeout for resources that have to be type-guessed
+    timeout = config.get(
+        'ckanext.xloader.job_timeout',
+        '3600' if utils.datastore_resource_exists(res_id) else '10800')
+    log.debug("Timeout for XLoading resource %s is %s", res_id, timeout)
+
     try:
         job = enqueue_job(
-            jobs.xloader_data_into_datastore, [data], rq_kwargs=dict(timeout=timeout)
-        )
-    except TypeError:
-        # This except provides support for 2.7.
-        job = _enqueue(
-            jobs.xloader_data_into_datastore, [data], timeout=timeout
+            jobs.xloader_data_into_datastore, [data], queue=custom_queue,
+            title="xloader_submit: package: {} resource: {}".format(resource_dict.get('package_id'), res_id),
+            rq_kwargs=dict(timeout=timeout)
         )
     except Exception:
         log.exception('Unable to enqueued xloader res_id=%s', res_id)
