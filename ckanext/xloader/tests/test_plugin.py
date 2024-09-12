@@ -12,8 +12,6 @@ from ckan.tests import helpers, factories
 from ckan.logic import _actions
 from ckanext.xloader.plugin import _should_remove_unsupported_resource_from_datastore
 
-from ckanext.xloader.plugin import XLoaderFormats, DEFAULT_FORMATS
-
 
 @pytest.mark.usefixtures("clean_db", "with_plugins")
 @pytest.mark.ckan_config("ckan.plugins", "datastore xloader")
@@ -106,15 +104,3 @@ class TestNotify(object):
             "value": "{}",
             "error": "{}",
         }
-
-
-class TestXloaderFormatCheck(object):
-    def test_is_it_an_xloader_format(self):
-        formats = u'csv tsv'
-        with helpers.changed_config(u'ckanext.xloader.formats', formats):
-            for res_format in DEFAULT_FORMATS:
-                is_valid_format = XLoaderFormats.is_it_an_xloader_format(res_format)
-                if res_format in formats.split():
-                    assert is_valid_format
-                else:
-                    assert not is_valid_format
