@@ -200,11 +200,12 @@ def xloader_data_into_datastore_(input, job_dict, logger):
     resource['hash'] = file_hash
 
     def direct_load():
-        fields = loader.load_csv(
+        fields, is_data_dict_populated = loader.load_csv(
             tmp_file.name,
             resource_id=resource['id'],
             mimetype=resource.get('format'),
             logger=logger)
+        data['is_data_dict_populated'] = is_data_dict_populated
         loader.calculate_record_count(
             resource_id=resource['id'], logger=logger)
         set_datastore_active(data, resource, logger)
@@ -223,16 +224,19 @@ def xloader_data_into_datastore_(input, job_dict, logger):
         # logger.info('File Hash updated for resource: %s', resource['hash'])
 
     def tabulator_load():
+        is_data_dict_populated = False
         try:
-            loader.load_table(tmp_file.name,
-                              resource_id=resource['id'],
-                              mimetype=resource.get('format'),
-                              logger=logger)
+            is_data_dict_populated = loader.load_table(
+                tmp_file.name,
+                resource_id=resource['id'],
+                mimetype=resource.get('format'),
+                logger=logger)
         except JobError as e:
             logger.error('Error during tabulator load: %s', e)
             raise
         loader.calculate_record_count(
             resource_id=resource['id'], logger=logger)
+        data['is_data_dict_populated'] = is_data_dict_populated
         set_datastore_active(data, resource, logger)
         logger.info('Finished loading with tabulator')
         # update_resource(resource={'id': resource['id'], 'hash': resource['hash']},
@@ -251,7 +255,7 @@ def xloader_data_into_datastore_(input, job_dict, logger):
     logger.info("'use_type_guessing' mode is: %s", use_type_guessing)
     try:
         if use_type_guessing:
-            tabulator_load()
+             tabulator_load()
         else:
             try:
                 direct_load()

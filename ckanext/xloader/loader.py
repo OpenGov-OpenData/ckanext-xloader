@@ -225,7 +225,7 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
                 {'id': header_name,
                  'type': 'text'}
                 for header_name in headers]
-
+        is_data_dict_populated = _is_data_dict_populated(fields, logger)
         logger.info('Fields: %s', fields)
 
         # Create table
@@ -319,8 +319,16 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
     _populate_fulltext(connection, resource_id, fields=fields)
     logger.info('...search index created')
 
-    return fields
+    return fields, is_data_dict_populated
 
+def _is_data_dict_populated(fields, logger):
+    """Return True if the data_dict has been populated with the fields"""
+    if (any((field for field in fields if field.get('info', {}).get('label'))) or
+        any((field for field in fields if field.get('info', {}).get('notes'))) or
+        any((field for field in fields if field.get('info', {}).get('type_override')))):
+        logger.info('Setting resource.is_data_dict_populated = True')
+        return True
+    return False
 
 def create_column_indexes(fields, resource_id, logger):
     logger.info('Creating column indexes (a speed optimization for queries)...')
@@ -442,6 +450,8 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
                 logger.info('Deleting "%s" from datastore.', resource_id)
                 delete_datastore_resource(resource_id)
 
+        is_data_dict_populated = _is_data_dict_populated(headers_dicts, logger)
+        logger.info('Fields: %s', headers_dicts)
         logger.info('Copying to database...')
         count = 0
         # Some types cannot be stored as empty strings and must be converted to None,
@@ -462,6 +472,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
     else:
         # no datastore table is created
         raise LoaderError('No entries found - nothing to load')
+    return is_data_dict_populated
 
 
 _TYPE_MAPPING = {

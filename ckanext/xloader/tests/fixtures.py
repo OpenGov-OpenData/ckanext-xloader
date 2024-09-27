@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import orm
 import os
-
+import pytest
 from ckanext.datastore.tests import helpers as datastore_helpers
 from ckanext.xloader.loader import get_write_engine
 
@@ -98,27 +98,6 @@ except ImportError:
         If possible use the ``clean_index`` fixture instead.
         """
         return search.clear_all
-
-    @pytest.fixture
-    def clean_db(reset_db):
-        """Resets the database to the initial state.
-
-        This can be used either for all tests in a class::
-
-            @pytest.mark.usefixtures("clean_db")
-            class TestExample(object):
-
-                def test_example(self):
-
-        or for a single test::
-
-            class TestExample(object):
-
-                @pytest.mark.usefixtures("clean_db")
-                def test_example(self):
-
-        """
-        reset_db()
 
     @pytest.fixture
     def clean_index(reset_index):
