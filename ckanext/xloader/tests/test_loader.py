@@ -95,13 +95,13 @@ class TestLoadCsv(TestLoadBase):
         csv_filepath = get_sample_filepath("simple.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_csv(
+        _, is_data_dict_populated = loader.load_csv(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
-
+        assert is_data_dict_populated == False
         assert self._get_records(
             Session, resource_id, limit=1, exclude_full_text_column=False
         ) == [
@@ -140,7 +140,7 @@ class TestLoadCsv(TestLoadBase):
         csv_filepath = get_sample_filepath("simple.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        fields = loader.load_csv(
+        fields, is_data_dict_populated = loader.load_csv(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
@@ -149,6 +149,7 @@ class TestLoadCsv(TestLoadBase):
         loader.create_column_indexes(
             fields=fields, resource_id=resource_id, logger=logger
         )
+        assert is_data_dict_populated == False
 
         assert (
             self._get_records(
@@ -742,7 +743,7 @@ class TestLoadCsv(TestLoadBase):
         )
 
         # Load it again with new types
-        fields = loader.load_csv(
+        fields, is_data_dict_populated = loader.load_csv(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
@@ -751,6 +752,7 @@ class TestLoadCsv(TestLoadBase):
         loader.create_column_indexes(
             fields=fields, resource_id=resource_id, logger=logger
         )
+        assert is_data_dict_populated == True
 
         assert len(self._get_records(Session, resource_id)) == 6
         assert self._get_column_names(Session, resource_id) == [
@@ -797,13 +799,13 @@ class TestLoadCsv(TestLoadBase):
         csv_filepath = get_sample_filepath("column_names.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_csv(
+        _, is_data_dict_populated = loader.load_csv(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
-
+        assert is_data_dict_populated == False
         assert self._get_column_names(Session, resource_id)[2:] == [
             u"d@t$e",
             u"t^e&m*pe!r(a)t?u:r%%e",
@@ -881,13 +883,13 @@ class TestLoadUnhandledTypes(TestLoadBase):
         filepath = get_sample_filepath("polling_locations.shapefile.zip")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_csv(
+        _, is_data_dict_populated = loader.load_csv(
             filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
-
+        assert is_data_dict_populated == False
         assert self._get_records(Session, resource_id) == []
         assert self._get_column_names(Session, resource_id) == [
             '_id',
@@ -901,13 +903,13 @@ class TestLoadTabulator(TestLoadBase):
         csv_filepath = get_sample_filepath("simple.xls")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="xls",
             logger=logger,
         )
-
+        assert is_data_dict_populated == False
         assert (
             "'galway':"
             in self._get_records(
@@ -966,12 +968,14 @@ class TestLoadTabulator(TestLoadBase):
         csv_filepath = get_sample_filepath("simple-large.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         assert self._get_column_types(Session, resource_id) == [
             u"int4",
             u"tsvector",
@@ -983,12 +987,14 @@ class TestLoadTabulator(TestLoadBase):
         csv_filepath = get_sample_filepath("mixed_numeric_string_sample.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         assert len(self._get_records(Session, resource_id)) == 6
 
         assert self._get_column_types(Session, resource_id) == [
@@ -1016,12 +1022,14 @@ class TestLoadTabulator(TestLoadBase):
                 time.strftime("%H:%M:%S", time.localtime(t0))
             )
         )
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         print("Load: {}s".format(time.time() - t0))
 
     # test disabled by default to avoid adding large file to repo and slow test
@@ -1040,19 +1048,20 @@ class TestLoadTabulator(TestLoadBase):
                 time.strftime("%H:%M:%S", time.localtime(t0))
             )
         )
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
         print("Load: {}s".format(time.time() - t0))
 
     def test_boston_311(self, Session):
         csv_filepath = get_sample_filepath("boston_311_sample.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="csv",
@@ -1061,6 +1070,8 @@ class TestLoadTabulator(TestLoadBase):
 
         records = self._get_records(Session, resource_id)
         print(records)
+        assert is_data_dict_populated == False
+
         assert records == [
             (
                 1,
@@ -1246,36 +1257,41 @@ class TestLoadTabulator(TestLoadBase):
         csv_filepath = get_sample_filepath("sample_with_quoted_commas.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         assert len(self._get_records(Session, resource_id)) == 3
 
     def test_with_iso_8859_1(self, Session):
         csv_filepath = get_sample_filepath("non_utf8_sample.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         assert len(self._get_records(Session, resource_id)) == 266
 
     def test_with_mixed_quotes(self, Session):
         csv_filepath = get_sample_filepath("sample_with_mixed_quotes.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
         assert len(self._get_records(Session, resource_id)) == 2
 
     def test_preserving_time_ranges(self, Session):
@@ -1284,12 +1300,14 @@ class TestLoadTabulator(TestLoadBase):
         csv_filepath = get_sample_filepath("non_timestamp_sample.csv")
         resource = factories.Resource()
         resource_id = resource['id']
-        loader.load_table(
+        is_data_dict_populated = loader.load_table(
             csv_filepath,
             resource_id=resource_id,
             mimetype="text/csv",
             logger=logger,
         )
+        assert is_data_dict_populated == False
+
         assert self._get_records(Session, resource_id) == [
             (1, "Adavale", 4474, Decimal("-25.9092582"), Decimal("144.5975769"),
              "8:00", "16:00", datetime.datetime(2018, 7, 19)),
