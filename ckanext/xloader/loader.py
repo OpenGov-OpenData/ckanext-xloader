@@ -322,7 +322,7 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
     return fields, is_data_dict_populated
 
 def _is_data_dict_populated(fields, logger):
-    """Return True if the data_dict has been populated with the fields"""
+    """Return True if the data dictionary has been populated"""
     if (any((field for field in fields if field.get('info', {}).get('label'))) or
         any((field for field in fields if field.get('info', {}).get('notes'))) or
         any((field for field in fields if field.get('info', {}).get('type_override')))):
