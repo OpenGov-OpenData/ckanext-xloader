@@ -80,9 +80,9 @@ jobs:
       uses: sonarsource/sonarqube-scan-action@master
       with: 
         args: >
-          -Dsonar.application=open-data
           -Dsonar.projectKey=ckanext-xloader
-          -Dsonar.tests=ckanext/xloader/tests/
+          -Dsonar.sources=ckanext/xloader
+          -Dsonar.tests=ckanext/xloader/tests
           -Dsonar.python.coverage.reportPaths=coverage.xml
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_API_TOKEN }}
