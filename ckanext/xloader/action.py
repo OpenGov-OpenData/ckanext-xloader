@@ -133,17 +133,19 @@ def xloader_submit(context, data_dict):
         task
     )
 
-    # Don't use url_for() due to compatibility issue with older CKAN versions
-    site_url = config['ckan.site_url']
-    callback_url = site_url + '/api/3/action/xloader_hook'
-
+    callback_url = p.toolkit.url_for(
+        "api.action",
+        ver=3,
+        logic_function="xloader_hook",
+        qualified=True
+    )
     data = {
         'api_key': utils.get_xloader_user_apitoken(),
         'job_type': 'xloader_to_datastore',
         'result_url': callback_url,
         'metadata': {
             'ignore_hash': data_dict.get('ignore_hash', False),
-            'ckan_url': site_url,
+            'ckan_url': config['ckan.site_url'],
             'resource_id': res_id,
             'set_url_type': data_dict.get('set_url_type', False),
             'task_created': task['last_updated'],
