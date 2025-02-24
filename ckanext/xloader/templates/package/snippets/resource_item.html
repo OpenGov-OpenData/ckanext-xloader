@@ -16,8 +16,9 @@
 
 {% block resource_item_title %}
   {{ super() }}
-  {{ h.xloader_badge(res) }}
-  {% asset 'ckanext-xloader/main-css' %}
+  {% set badge = h.xloader_badge(res) %}
+  {% if badge and g.user %}
+    {{ badge }}
+    {% asset 'ckanext-xloader/main-css' %}
+  {% endif %}
 {% endblock %}
-
-

@@ -3,8 +3,8 @@
 
 {% block resource_read_url %}
   {% set badge = h.xloader_badge(res) %}
-  {% if badge %}
-    {{ badge }}<br/>
+  {% if badge and g.user %}
+    <div class="resource-badge">{{ badge }}</div>
     {% asset 'ckanext-xloader/main-css' %}
   {% endif %}
   {{ super() }}

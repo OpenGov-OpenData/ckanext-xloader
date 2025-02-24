@@ -1,5 +1,4 @@
 .loader-badge {
-  margin-left: 10px;
   background: #555;
   color: #fff;
   border-radius: 3px;
@@ -58,3 +57,11 @@ a.loader-badge {
   background: #9D9D9D;
 }
 
+.resource-item .loader-badge {
+  margin-left: 5px;
+  margin-top: -5px;
+}
+
+.resource-badge .loader-badge {
+  margin-bottom: 20px;
+}
