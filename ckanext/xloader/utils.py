@@ -133,9 +133,8 @@ def resource_data(id, resource_id, rows=None):
         )
 
     try:
-        # We want these variables in c object when displaying translated names
-        p.toolkit.c.pkg_dict = p.toolkit.get_action("package_show")(None, {"id": id})
-        p.toolkit.c.resource = p.toolkit.get_action("resource_show")(
+        pkg_dict = p.toolkit.get_action("package_show")(None, {"id": id})
+        resource = p.toolkit.get_action("resource_show")(
             None, {"id": resource_id}
         )
     except (p.toolkit.ObjectNotFound, p.toolkit.NotAuthorized):
@@ -150,10 +149,14 @@ def resource_data(id, resource_id, rows=None):
     except p.toolkit.NotAuthorized:
         return p.toolkit.abort(403, p.toolkit._("Not authorized to see this page"))
 
+    # We want these variables in c object when displaying translated names
+    p.toolkit.c.pkg_dict = pkg_dict
+    p.toolkit.c.resource = resource
+
     extra_vars = {
         "status": xloader_status,
-        "resource": p.toolkit.c.resource,
-        "pkg_dict": p.toolkit.c.pkg_dict,
+        "resource": resource,
+        "pkg_dict": pkg_dict,
     }
     if rows:
         extra_vars["rows"] = rows
