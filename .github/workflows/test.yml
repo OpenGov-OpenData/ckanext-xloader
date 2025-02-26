@@ -23,22 +23,29 @@ jobs:
     needs: lint
     strategy:
       matrix:
-        include:
+        include: #ckan-image see https://github.com/ckan/ckan-docker-base, ckan-version controls other image tags
           - ckan-version: "2.11"
-            ckan-image: "ckan/ckan-dev:2.11-py3.10"
+            ckan-image: "2.11-py3.10"
             solr-version: "9"
+            experimental: false
           - ckan-version: "2.10"
-            ckan-image: "ckan/ckan-dev:2.10-py3.10"
+            ckan-image: "2.10-py3.10"
             solr-version: "9"
+            experimental: false
           - ckan-version: "2.9"
-            ckan-image: "ckan/ckan-dev:2.9-py3.9"
+            ckan-image: "2.9-py3.9"
             solr-version: "8"
+            experimental: false
+          - ckan-version: "master"
+            ckan-image: "master"
+            solr-version: "9"
+            experimental: true  # master is unstable, good to know if we are compatible or not
       fail-fast: false
 
     name: CKAN ${{ matrix.ckan-version }}
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.ckan-image }}
+      image: ckan/ckan-dev:${{ matrix.ckan-image }}
       options: --user root
     services:
       solr:
@@ -63,7 +70,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      continue-on-error: ${{ matrix.experimental }}
+
+    - name: Pin setuptools for ckan 2.9 only
+      if: ${{ matrix.ckan-version == 2.9 }}
+      run: pip install "setuptools>=44.1.0,<71"
+      continue-on-error: ${{ matrix.experimental }}
+
     - name: Install requirements
+      continue-on-error: ${{ matrix.experimental }}
       run: |
         pip install -r requirements.txt
         pip install -r dev-requirements.txt
@@ -74,15 +89,23 @@ jobs:
         # Install unzip for SonarQube Scan
         apt-get update
         apt-get install unzip -y
-    - name: Install requirements (2.9)
-      run: |
-        pip install -U pytest-rerunfailures
-      if: ${{ matrix.ckan-version == '2.9' }}
-    - name: Setup extension (CKAN >= 2.9)
+
+    - name: Setup extension
+      continue-on-error: ${{ matrix.experimental }}
       run: |
         ckan -c test.ini db init
+
     - name: Run tests
-      run: pytest --ckan-ini=test.ini --cov=ckanext.xloader --cov-report xml:coverage.xml --disable-warnings ckanext/xloader/tests
+      continue-on-error: ${{ matrix.experimental }}
+      run: pytest --ckan-ini=test.ini --cov=ckanext.xloader --disable-warnings ckanext/xloader/tests --junit-xml=/tmp/artifacts/junit/results.xml
+
+    - name: Test Summary
+      uses: test-summary/action@v2
+      continue-on-error: ${{ matrix.experimental }}
+      with:
+        paths: "/tmp/artifacts/junit/*.xml"
+      if: always()
+
     - name: SonarQube Scan
       uses: sonarsource/sonarqube-scan-action@master
       with: 

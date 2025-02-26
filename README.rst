@@ -128,7 +128,7 @@ CKAN version    Compatibility
 =============== =============
 2.7             no longer supported (last supported version: 0.12.2)
 2.8             no longer supported (last supported version: 0.12.2)
-2.9             yes (Python3) (last supported version for Python 2.7: 0.12.2))
+2.9             yes (Python3) (last supported version for Python 2.7: 0.12.2)), Must: ``pip install "setuptools>=44.1.0,<71"``
 2.10            yes
 2.11            yes
 =============== =============
@@ -202,6 +202,20 @@ For example, to make [PostgreSQL](https://www.postgresql.org/docs/current/runtim
 expect European (day-first) dates, you could add to ``postgresql.conf``:
 
     datestyle=ISO,DMY
+
+External Database credentials for datastore
+
+     ``ckanext.xloader.jobs_db.uri = postgresql://ckan_default:pass@localhost/ckan_default``
+
+API Key requires for xloader interaction CKAN 2.10 onwards, to generate  ``TOKEN=ckan -c /etc/ckan/default/production.ini user token add $ACCOUNT xloader | tail -1 | tr -d '[:space:]')``
+
+     ``ckanext.xloader.api_token = <your-CKAN-generated-API-Token>``
+
+Badge notification on what xloader is doing
+
+     ``ckanext.xloader.show_badges = True|False (default True)``
+
+     ``ckanext.xloader.debug_badges = True|False (default False)``
 
 ------------------------
 Developer installation

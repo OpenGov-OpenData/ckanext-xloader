@@ -1,0 +1,10 @@
+{% ckan_extends %}
+
+{% block resource_info %}
+  {{ super() }}
+  {% set badge = h.xloader_badge(res) %}
+  {% if badge and g.user %}
+    {{ badge }}
+    {% asset 'ckanext-xloader/main-css' %}
+  {% endif %}
+{% endblock %}
