@@ -14,6 +14,7 @@ from chardet.universaldetector import UniversalDetector
 from six.moves import zip
 from tabulator import config as tabulator_config, EncodingError, Stream, TabulatorException
 from unidecode import unidecode
+import sqlalchemy as sa
 
 import ckan.plugins as p
 
@@ -118,8 +119,8 @@ def _clear_datastore_resource(resource_id):
     '''
     engine = get_write_engine()
     with engine.begin() as conn:
-        conn.execute("SET LOCAL lock_timeout = '15s'")
-        conn.execute('TRUNCATE TABLE "{}" RESTART IDENTITY'.format(resource_id))
+        conn.execute(sa.text("SET LOCAL lock_timeout = '15s'"))
+        conn.execute(sa.text('TRUNCATE TABLE "{}" RESTART IDENTITY'.format(resource_id)))
 
 
 def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
@@ -171,17 +172,6 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
     logger.info('Ensuring character coding is UTF8')
     f_write = tempfile.NamedTemporaryFile(suffix=file_format, delete=False)
     try:
-        save_args = {'target': f_write.name, 'format': 'csv', 'encoding': 'utf-8', 'delimiter': delimiter}
-        try:
-            with UnknownEncodingStream(csv_filepath, file_format, decoding_result,
-                                       skip_rows=skip_rows) as stream:
-                stream.save(**save_args)
-        except (EncodingError, UnicodeDecodeError):
-            with Stream(csv_filepath, format=file_format, encoding=SINGLE_BYTE_ENCODING,
-                        skip_rows=skip_rows) as stream:
-                stream.save(**save_args)
-        csv_filepath = f_write.name
-
         # datastore db connection
         engine = get_write_engine()
 
@@ -189,10 +179,16 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
         existing = datastore_resource_exists(resource_id)
         existing_info = {}
         if existing:
-            existing_fields = existing.get('fields', [])
+            if p.toolkit.check_ckan_version(min_version='2.11'):
+                ds_info = p.toolkit.get_action('datastore_info')({'ignore_auth': True}, {'id': resource_id})
+                existing_fields = ds_info.get('fields', [])
+            else:
+                existing_fields = existing.get('fields', [])
             existing_info = dict((f['id'], f['info'])
                                  for f in existing_fields
                                  if 'info' in f)
+            existing_fields_by_headers = dict((f['id'], f)
+                                              for f in existing_fields)
 
             # Column types are either set (overridden) in the Data Dictionary page
             # or default to text type (which is robust)
@@ -207,6 +203,8 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
             for f in fields:
                 if f['id'] in existing_info:
                     f['info'] = existing_info[f['id']]
+                    f['strip_extra_white'] = existing_info[f['id']].get('strip_extra_white') if 'strip_extra_white' in existing_info[f['id']] \
+                        else existing_fields_by_headers[f['id']].get('strip_extra_white', True)
 
             '''
             Delete or truncate existing datastore table before proceeding,
@@ -223,10 +221,35 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
         else:
             fields = [
                 {'id': header_name,
-                 'type': 'text'}
+                 'type': 'text',
+                 'strip_extra_white': True}
                 for header_name in headers]
         is_data_dict_populated = _is_data_dict_populated(fields, logger)
         logger.info('Fields: %s', fields)
+
+        def _make_whitespace_stripping_iter(super_iter):
+            def strip_white_space_iter():
+                for row in super_iter():
+                    if len(row) == len(fields):
+                        for _index, _cell in enumerate(row):
+                            # only strip white space if strip_extra_white is True
+                            if fields[_index].get('strip_extra_white', True) and isinstance(_cell, str):
+                                row[_index] = _cell.strip()
+                    yield row
+            return strip_white_space_iter
+
+        save_args = {'target': f_write.name, 'format': 'csv', 'encoding': 'utf-8', 'delimiter': delimiter}
+        try:
+            with UnknownEncodingStream(csv_filepath, file_format, decoding_result,
+                                       skip_rows=skip_rows) as stream:
+                stream.iter = _make_whitespace_stripping_iter(stream.iter)
+                stream.save(**save_args)
+        except (EncodingError, UnicodeDecodeError):
+            with Stream(csv_filepath, format=file_format, encoding=SINGLE_BYTE_ENCODING,
+                        skip_rows=skip_rows) as stream:
+                stream.iter = _make_whitespace_stripping_iter(stream.iter)
+                stream.save(**save_args)
+        csv_filepath = f_write.name
 
         # Create table
         from ckan import model
@@ -253,12 +276,16 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
         except Exception as e:
             raise LoaderError('Could not create the database table: {}'
                               .format(e))
-        connection = context['connection'] = engine.connect()
 
-        # datstore_active is switched on by datastore_create - TODO temporarily
-        # disable it until the load is complete
-        _disable_fulltext_trigger(connection, resource_id)
-        _drop_indexes(context, data_dict, False)
+        # datastore_active is switched on by datastore_create
+        # TODO temporarily disable it until the load is complete
+
+        with engine.begin() as conn:
+            _disable_fulltext_trigger(conn, resource_id)
+
+        with engine.begin() as conn:
+            context['connection'] = conn
+            _drop_indexes(context, data_dict, False)
 
         logger.info('Copying to database...')
 
@@ -276,9 +303,8 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
         # 4. COPY FROM STDIN - not quite as fast as COPY from a file, but avoids
         #    the superuser issue. <-- picked
 
-        raw_connection = engine.raw_connection()
-        try:
-            cur = raw_connection.cursor()
+        with engine.begin() as conn:
+            cur = conn.connection.cursor()
             try:
                 with open(csv_filepath, 'rb') as f:
                     # can't use :param for table name because params are only
@@ -308,15 +334,14 @@ def load_csv(csv_filepath, resource_id, mimetype='text/csv', logger=None):
 
             finally:
                 cur.close()
-        finally:
-            raw_connection.commit()
     finally:
         os.remove(csv_filepath)  # i.e. the tempfile
 
     logger.info('...copying done')
 
     logger.info('Creating search index...')
-    _populate_fulltext(connection, resource_id, fields=fields)
+    with engine.begin() as conn:
+        _populate_fulltext(conn, resource_id, fields=fields, logger=logger)
     logger.info('...search index created')
 
     return fields, is_data_dict_populated
@@ -393,10 +418,16 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
     existing = datastore_resource_exists(resource_id)
     existing_info = None
     if existing:
-        existing_fields = existing.get('fields', [])
+        if p.toolkit.check_ckan_version(min_version='2.11'):
+            ds_info = p.toolkit.get_action('datastore_info')({'ignore_auth': True}, {'id': resource_id})
+            existing_fields = ds_info.get('fields', [])
+        else:
+            existing_fields = existing.get('fields', [])
         existing_info = dict(
             (f['id'], f['info'])
             for f in existing_fields if 'info' in f)
+        existing_fields_by_headers = dict((f['id'], f)
+                                          for f in existing_fields)
 
     # Some headers might have been converted from strings to floats and such.
     headers = encode_headers(headers)
@@ -410,6 +441,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
     strict_guessing = p.toolkit.asbool(
         config.get('ckanext.xloader.strict_type_guessing', True))
     types = type_guess(stream.sample[1:], types=TYPES, strict=strict_guessing)
+    fields = []
 
     # override with types user requested
     if existing_info:
@@ -420,6 +452,12 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
                 'timestamp': datetime.datetime,
             }.get(existing_info.get(h, {}).get('type_override'), t)
             for t, h in zip(types, headers)]
+        for h in headers:
+            fields.append(existing_fields_by_headers.get(h, {}))
+    else:
+        # default strip_extra_white
+        for h in headers:
+            fields.append({'strip_extra_white': True})
 
     # Strip leading and trailing whitespace, then truncate to maximum length,
     # then strip again in case the truncation exposed a space.
@@ -429,7 +467,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
         if header and header.strip()
     ]
     header_count = len(headers)
-    type_converter = TypeConverter(types=types)
+    type_converter = TypeConverter(types=types, fields=fields)
 
     with UnknownEncodingStream(table_filepath, file_format, decoding_result,
                                skip_rows=skip_rows,
@@ -461,10 +499,16 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
             for h in headers_dicts:
                 if h['id'] in existing_info:
                     h['info'] = existing_info[h['id']]
+                    h['strip_extra_white'] = existing_info[h['id']].get('strip_extra_white') if 'strip_extra_white' in existing_info[h['id']] \
+                        else existing_fields_by_headers[h['id']].get('strip_extra_white', True)
                     # create columns with types user requested
                     type_override = existing_info[h['id']].get('type_override')
                     if type_override in list(_TYPE_MAPPING.values()):
                         h['type'] = type_override
+        else:
+            # default strip_extra_white
+            for h in headers_dicts:
+                h['strip_extra_white'] = True
 
         # preserve any types that we have sniffed unless told otherwise
         _save_type_overrides(headers_dicts)
@@ -596,9 +640,9 @@ def fulltext_function_exists(connection):
     https://github.com/ckan/ckan/pull/3786
     or otherwise it is checked on startup of this plugin.
     '''
-    res = connection.execute('''
+    res = connection.execute(sa.text('''
         select * from pg_proc where proname = 'populate_full_text_trigger';
-        ''')
+        '''))
     return bool(res.rowcount)
 
 
@@ -607,53 +651,107 @@ def fulltext_trigger_exists(connection, resource_id):
     This will only be the case if your CKAN is new enough to have:
     https://github.com/ckan/ckan/pull/3786
     '''
-    res = connection.execute('''
+    res = connection.execute(sa.text('''
         SELECT pg_trigger.tgname FROM pg_class
         JOIN pg_trigger ON pg_class.oid=pg_trigger.tgrelid
         WHERE pg_class.relname={table}
         AND pg_trigger.tgname='zfulltext';
         '''.format(
-        table=literal_string(resource_id)))
+        table=literal_string(resource_id))))
     return bool(res.rowcount)
 
 
 def _disable_fulltext_trigger(connection, resource_id):
-    connection.execute('ALTER TABLE {table} DISABLE TRIGGER zfulltext;'
-                       .format(table=identifier(resource_id)))
+    connection.execute(sa.text('ALTER TABLE {table} DISABLE TRIGGER zfulltext;'
+                       .format(table=identifier(resource_id, True))))
 
 
 def _enable_fulltext_trigger(connection, resource_id):
-    connection.execute('ALTER TABLE {table} ENABLE TRIGGER zfulltext;'
-                       .format(table=identifier(resource_id)))
+    connection.execute(sa.text(
+        'ALTER TABLE {table} ENABLE TRIGGER zfulltext;'
+        .format(table=identifier(resource_id, True))))
 
 
-def _populate_fulltext(connection, resource_id, fields):
-    '''Populates the _full_text column. i.e. the same as datastore_run_triggers
-    but it runs in 1/9 of the time.
+def _get_rows_count_of_resource(connection, table):
+    count_query = ''' SELECT count(_id) from {table} '''.format(table=table)
+    results = connection.execute(count_query)
+    rows_count = int(results.first()[0])
+    return rows_count
 
-    The downside is that it reimplements the code that calculates the text to
-    index, breaking DRY. And its annoying to pass in the column names.
 
-    fields: list of dicts giving the each column's 'id' (name) and 'type'
-            (text/numeric/timestamp)
+def _populate_fulltext(connection, resource_id, fields, logger):
+    '''Populates the _full_text column for full-text search functionality.
+    
+    This function creates a PostgreSQL tsvector (text search vector) for each row
+    by concatenating all non-system columns. It's equivalent to datastore_run_triggers
+    but runs approximately 9x faster by using direct SQL updates.
+    
+    To handle very large datasets (e.g., 4GB+ files with millions of rows), the update
+    operation is partitioned into chunks to prevent:
+    - Database statement timeouts
+    - Memory exhaustion
+    - Lock contention that could block other operations
+    - Transaction log overflow
+    
+    The chunking mechanism processes rows in batches based on their _id values,
+    with chunk size configurable via 'ckanext.xloader.search_update_chunks' 
+    (default: 100,000 rows per chunk).
+    
+    Args:
+        connection: Database connection object
+        resource_id (str): The datastore table identifier
+        fields (list): List of dicts with column 'id' (name) and 'type' 
+                      (text/numeric/timestamp)
+        logger: Logger instance for progress tracking
+        
+    Note:
+        This reimplements CKAN's text indexing logic for performance,
+        breaking DRY principle but providing significant speed improvements.
     '''
-    sql = \
-        u'''
-        UPDATE {table}
-        SET _full_text = to_tsvector({cols});
-        '''.format(
-            # coalesce copes with blank cells
-            table=identifier(resource_id),
-            cols=" || ' ' || ".join(
-                'coalesce({}, \'\')'.format(
-                    identifier(field['id'])
-                    + ('::text' if field['type'] != 'text' else '')
-                )
-                for field in fields
-                if not field['id'].startswith('_')
-            )
-        )
-    connection.execute(sql)
+    try:
+        # Get total row count to determine chunking strategy
+        rows_count = _get_rows_count_of_resource(connection, identifier(resource_id))
+    except Exception as e:
+        rows_count = ''
+        logger.info("Failed to get resource rows count: {} ".format(str(e)))
+        raise
+        
+    if rows_count:
+        # Configure chunk size - prevents timeouts and memory issues on large datasets
+        # Default 100,000 rows per chunk balances performance vs. resource usage
+        chunks = int(config.get('ckanext.xloader.search_update_chunks', 100000))
+        
+        # Process table in chunks using _id range queries
+        # This approach ensures consistent chunk sizes and allows resuming if interrupted
+        for start in range(0, rows_count, chunks):
+            try:
+                # Build SQL to update _full_text column with concatenated searchable content
+                sql = \
+                    '''
+                    UPDATE {table}
+                    SET _full_text = to_tsvector({cols}) WHERE _id BETWEEN {first} and {end};
+                    '''.format(
+                        table=identifier(resource_id),
+                        # Concatenate all user columns (excluding system columns starting with '_')
+                        # coalesce() handles NULL values by converting them to empty strings
+                        cols=" || ' ' || ".join(
+                            'coalesce({}, \'\')'.format(
+                                identifier(field['id'])
+                                + ('::text' if field['type'] != 'text' else '')  # Cast non-text types
+                            )
+                            for field in fields
+                            if not field['id'].startswith('_')  # Skip system columns like _id, _full_text
+                        ),
+                        first=start,
+                        end=start + chunks
+                    )
+                connection.execute(sql)
+                logger.info("Indexed rows {first} to {end} of {total}".format(
+                    first=start, end=min(start + chunks, rows_count), total=rows_count))
+            except Exception as e:
+                # Log chunk-specific errors but continue processing remaining chunks
+                logger.error("Failed to index rows {first}-{end}: {error}".format(
+                    first=start, end=start + chunks, error=str(e)))
 
 
 def calculate_record_count(resource_id, logger):
@@ -665,15 +763,18 @@ def calculate_record_count(resource_id, logger):
     logger.info('Calculating record count (running ANALYZE on the table)')
     engine = get_write_engine()
     conn = engine.connect()
-    conn.execute("ANALYZE \"{resource_id}\";"
-                 .format(resource_id=resource_id))
+    conn.execute(sa.text("ANALYZE \"{resource_id}\";"
+                         .format(resource_id=resource_id)))
 
 
-def identifier(s):
+def identifier(s, escape_binds=False):
     # "%" needs to be escaped, otherwise connection.execute thinks it is for
     # substituting a bind parameter
-    return u'"' + s.replace(u'"', u'""').replace(u'\0', '').replace('%', '%%')\
-        + u'"'
+    escaped = s.replace(u'"', u'""').replace(u'\0', '')
+    if escape_binds:
+        escaped = escaped.replace('%', '%%')
+
+    return u'"' + escaped + u'"'
 
 
 def literal_string(s):

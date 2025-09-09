@@ -15,19 +15,18 @@ from psycopg2 import errors
 from six.moves.urllib.parse import urlsplit
 import requests
 from rq import get_current_job
+from rq.timeouts import JobTimeoutException
 import sqlalchemy as sa
 
 from ckan import model
-from ckan.plugins.toolkit import get_action, asbool, enqueue_job, ObjectNotFound, config
+from ckan.plugins.toolkit import get_action, asbool, enqueue_job, ObjectNotFound, config, h
 
 from . import db, loader
 from .job_exceptions import JobError, HTTPError, DataTooBigError, FileCouldNotBeLoadedError
-from .utils import datastore_resource_exists, set_resource_metadata
+from .utils import datastore_resource_exists, set_resource_metadata, modify_input_url
 
-try:
-    from ckan.lib.api_token import get_user_from_token
-except ImportError:
-    get_user_from_token = None
+
+from ckan.lib.api_token import get_user_from_token
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +50,7 @@ RETRYABLE_ERRORS = (
 # Retries can only occur in cases where the datastore entry exists,
 # so use the standard timeout
 RETRIED_JOB_TIMEOUT = config.get('ckanext.xloader.job_timeout', '3600')
+APITOKEN_HEADER_NAME = config.get('apitoken_header_name', 'Authorization')
 
 
 # input = {
@@ -177,8 +177,14 @@ def xloader_data_into_datastore_(input, job_dict, logger):
     logger.info('Express Load starting: %s', resource_ckan_url)
 
     # check if the resource url_type is a datastore
-    if resource.get('url_type') == 'datastore':
-        logger.info('Ignoring resource - url_type=datastore - dump files are '
+    if hasattr(h, "datastore_rw_resource_url_types"):
+        datastore_rw_resource_url_types = h.datastore_rw_resource_url_types()
+    else:
+        # fallback for 2.10.x or older.
+        datastore_rw_resource_url_types = ['datastore']
+
+    if resource.get('url_type') in datastore_rw_resource_url_types:
+        logger.info('Ignoring resource - R/W DataStore resources are '
                     'managed with the Datastore API')
         return
 
@@ -269,6 +275,13 @@ def xloader_data_into_datastore_(input, job_dict, logger):
                 logger.warning('Load using COPY failed: %s', e)
                 logger.info('Trying again with tabulator')
                 tabulator_load()
+    except JobTimeoutException:
+        try:
+            tmp_file.close()
+        except FileNotFoundError:
+            pass
+        logger.warning('Job timed out after %ss', RETRIED_JOB_TIMEOUT)
+        raise JobError('Job timed out after {}s'.format(RETRIED_JOB_TIMEOUT))
     except FileCouldNotBeLoadedError as e:
         logger.warning('Loading excerpt for this format not supported.')
         logger.error('Loading file raised an error: %s', e)
@@ -292,8 +305,9 @@ def _download_resource_data(resource, data, api_key, logger):
     data['datastore_contains_all_records_of_source_file'] = False
     which will be saved to the resource later on.
     '''
+    # update base url (for possible local loopback)
+    url = modify_input_url(resource.get('url'))
     # check scheme
-    url = resource.get('url')
     url_parts = urlsplit(url)
     scheme = url_parts.scheme
     if scheme not in ('http', 'https', 'ftp'):
@@ -319,7 +333,7 @@ def _download_resource_data(resource, data, api_key, logger):
         if resource.get('url_type') == 'upload':
             # If this is an uploaded file to CKAN, authenticate the request,
             # otherwise we won't get file from private resources
-            headers['Authorization'] = api_key
+            headers[APITOKEN_HEADER_NAME] = api_key
 
             # Add a constantly changing parameter to bypass URL caching.
             # If we're running XLoader, then either the resource has
@@ -374,6 +388,7 @@ def _download_resource_data(resource, data, api_key, logger):
         response.close()
         data['datastore_contains_all_records_of_source_file'] = False
     except requests.exceptions.HTTPError as error:
+        tmp_file.close()
         # status code error
         logger.debug('HTTP error: %s', error)
         raise HTTPError(
@@ -385,6 +400,7 @@ def _download_resource_data(resource, data, api_key, logger):
         raise JobError('Connection timed out after {}s'.format(
                        DOWNLOAD_TIMEOUT))
     except requests.exceptions.RequestException as e:
+        tmp_file.close()
         try:
             err_message = str(e.reason)
         except AttributeError:
@@ -393,6 +409,10 @@ def _download_resource_data(resource, data, api_key, logger):
         raise HTTPError(
             message=err_message, status_code=None,
             request_url=url, response=None)
+    except JobTimeoutException:
+        tmp_file.close()
+        logger.warning('Job timed out after %ss', RETRIED_JOB_TIMEOUT)
+        raise JobError('Job timed out after {}s'.format(RETRIED_JOB_TIMEOUT))
 
     logger.info('Downloaded ok - %s', printable_file_size(length))
     file_hash = m.hexdigest()
@@ -465,12 +485,12 @@ def callback_xloader_hook(result_url, api_key, job_dict):
         if ':' in api_key:
             header, key = api_key.split(':')
         else:
-            header, key = 'Authorization', api_key
+            header, key = APITOKEN_HEADER_NAME, api_key
         headers[header] = key
 
     try:
         result = requests.post(
-            result_url,
+            modify_input_url(result_url), # modify with local config
             data=json.dumps(job_dict, cls=DatetimeJsonEncoder),
             verify=SSL_VERIFY,
             headers=headers)
@@ -513,19 +533,9 @@ def update_resource(resource, patch_only=False):
 
 def _get_user_from_key(api_key_or_token):
     """ Gets the user using the API Token or API Key.
-
-    This method provides backwards compatibility for CKAN 2.9 that
-    supported both methods and previous CKAN versions supporting
-    only API Keys.
     """
-    user = None
-    if get_user_from_token:
-        user = get_user_from_token(api_key_or_token)
-    if not user:
-        user = model.Session.query(model.User).filter_by(
-            apikey=api_key_or_token
-        ).first()
-    return user
+    return get_user_from_token(api_key_or_token)
+
 
 
 def get_resource_and_dataset(resource_id, api_key):
