@@ -47,11 +47,19 @@ def xloader_submit(context, data_dict):
     :rtype: bool
     '''
     p.toolkit.check_access('xloader_submit', context, data_dict)
+    api_key = utils.get_xloader_user_apitoken()
     custom_queue = data_dict.pop('queue', rq_jobs.DEFAULT_QUEUE_NAME)
     schema = context.get('schema', ckanext.xloader.schema.xloader_submit_schema())
     data_dict, errors = _validate(data_dict, schema, context)
     if errors:
         raise p.toolkit.ValidationError(errors)
+
+    p.toolkit.check_access('xloader_submit', context, data_dict)
+
+    # If sync is set to True, the xloader callback will be executed right
+    # away, instead of a job being enqueued. It will also delete any existing jobs
+    # for the given resource. This is only controlled by sysadmins or the system.
+    sync = data_dict.pop('sync', False)
 
     res_id = data_dict['resource_id']
     try:
@@ -140,7 +148,7 @@ def xloader_submit(context, data_dict):
         qualified=True
     )
     data = {
-        'api_key': utils.get_xloader_user_apitoken(),
+        'api_key': api_key,
         'job_type': 'xloader_to_datastore',
         'result_url': callback_url,
         'metadata': {
@@ -166,14 +174,19 @@ def xloader_submit(context, data_dict):
         job = enqueue_job(
             jobs.xloader_data_into_datastore, [data], queue=custom_queue,
             title="xloader_submit: package: {} resource: {}".format(resource_dict.get('package_id'), res_id),
-            rq_kwargs=dict(timeout=timeout)
+            rq_kwargs=dict(timeout=timeout, at_front=sync)
         )
     except Exception:
-        log.exception('Unable to enqueued xloader res_id=%s', res_id)
+        if sync:
+            log.exception('Unable to xloader res_id=%s', res_id)
+        else:
+            log.exception('Unable to enqueue xloader res_id=%s', res_id)
         return False
     log.debug('Enqueued xloader job=%s res_id=%s', job.id, res_id)
-
     value = json.dumps({'job_id': job.id})
+
+    if sync:
+        log.debug('Pushed xloader sync mode job=%s res_id=%s to front of queue', job.id, res_id)
 
     task['value'] = value
     task['state'] = 'pending'
