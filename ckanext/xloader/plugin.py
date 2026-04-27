@@ -185,6 +185,13 @@ class xloaderPlugin(plugins.SingletonPlugin):
 
     def _submit_to_xloader(self, resource_dict):
         context = {"ignore_auth": True, "defer_commit": True}
+        if toolkit.asbool(resource_dict.get("cloudstorage_multipart_pending", False)):
+            log.debug(
+                "Deferring xloading resource %s because a cloudstorage "
+                "multipart upload is still in progress.",
+                resource_dict.get("id"),
+            )
+            return
         resource_format = resource_dict.get("format")
         if not XLoaderFormats.is_it_an_xloader_format(resource_format):
             log.debug(
