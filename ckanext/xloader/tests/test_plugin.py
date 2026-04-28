@@ -34,40 +34,40 @@ class TestNotify(object):
 
         assert func.called
 
-    def test_skip_when_cloudstorage_multipart_pending(self, monkeypatch):
+    def test_skip_when_cloudstorage_multipart_pending(self):
         """xloader must not submit while a cloudstorage multipart upload is
         still in flight. When the flag is later cleared (e.g. by
         cloudstorage_finish_multipart calling resource_patch) xloader should
         submit."""
-        func = mock.Mock()
-        monkeypatch.setitem(_actions, "xloader_submit", func)
+        with mock.patch(
+            "ckanext.xloader.action.enqueue_job",
+            return_value=mock.MagicMock(id=123),
+        ) as enqueue_mock:
+            dataset = factories.Dataset()
 
-        dataset = factories.Dataset()
+            resource = helpers.call_action(
+                "resource_create",
+                {},
+                package_id=dataset["id"],
+                url="http://example.com/file.csv",
+                format="CSV",
+                cloudstorage_multipart_pending="True",
+            )
 
-        resource = helpers.call_action(
-            "resource_create",
-            {},
-            package_id=dataset["id"],
-            url="http://example.com/file.csv",
-            format="CSV",
-            cloudstorage_multipart_pending="True",
-        )
+            assert enqueue_mock.call_count == 0, (
+                "should not enqueue while cloudstorage_multipart_pending=True"
+            )
 
-        assert not func.called, (
-            "xloader_submit should be skipped while "
-            "cloudstorage_multipart_pending=True"
-        )
+            helpers.call_action(
+                "resource_patch",
+                {},
+                id=resource["id"],
+                cloudstorage_multipart_pending="False",
+            )
 
-        helpers.call_action(
-            "resource_patch",
-            {},
-            id=resource["id"],
-            cloudstorage_multipart_pending="False",
-        )
-
-        assert func.called, (
-            "xloader_submit should run once the pending flag is cleared"
-        )
+            assert enqueue_mock.call_count == 1, (
+                "xloader should enqueue once the pending flag is cleared"
+            )
 
     def test_submit_when_no_cloudstorage_multipart_pending(self, monkeypatch):
         """Resources without the cloudstorage_multipart_pending flag must

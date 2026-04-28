@@ -88,7 +88,7 @@ jobs:
         sed -i -e 's/use = config:.*/use = config:\/srv\/app\/src\/ckan\/test-core.ini/' test.ini
         # Install unzip for SonarQube Scan
         apt-get update
-        apt-get install unzip -y
+        apt-get install -y unzip gnupg
 
     - name: Setup extension
       continue-on-error: ${{ matrix.experimental }}

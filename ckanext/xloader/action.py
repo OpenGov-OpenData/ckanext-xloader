@@ -40,6 +40,10 @@ def xloader_submit(context, data_dict):
     :param ignore_hash: If set to True, the xloader will reload the file
         even if it haven't changed. (optional, default: False)
     :type ignore_hash: bool
+    :param ignore_pending: If set to True, submit even when
+        ``cloudstorage_multipart_pending`` is set (e.g. stuck flag after a
+        failed clear). (optional, default: False)
+    :type ignore_pending: bool
 
     Returns ``True`` if the job has been submitted and ``False`` if the job
     has not been submitted, i.e. when ckanext-xloader is not configured.
@@ -60,6 +64,15 @@ def xloader_submit(context, data_dict):
         })
     except p.toolkit.ObjectNotFound:
         return False
+
+    if p.toolkit.asbool(resource_dict.get('cloudstorage_multipart_pending', False)):
+        if not p.toolkit.asbool(data_dict.get("ignore_pending", False)):
+            log.debug(
+                "Deferring xloading resource %s because a cloudstorage "
+                "multipart upload is still in progress.",
+                resource_dict.get("id"),
+            )
+            return False
 
     for plugin in p.PluginImplementations(xloader_interfaces.IXloader):
         upload = plugin.can_upload(res_id)

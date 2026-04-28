@@ -31,6 +31,54 @@ class TestAction(object):
             )
             assert 1 == enqueue_mock.call_count
 
+    def test_submit_defers_when_cloudstorage_multipart_pending(self):
+        user = factories.User()
+        # Invalid format so resource_create does not enqueue via plugin
+        res = factories.Resource(user=user, format="aaa")
+        with mock.patch(
+            "ckanext.xloader.action.enqueue_job",
+            return_value=mock.MagicMock(id=123),
+        ) as enqueue_mock:
+            helpers.call_action(
+                "resource_patch",
+                {"user": user["name"]},
+                id=res["id"],
+                format="csv",
+                cloudstorage_multipart_pending="True",
+            )
+            assert enqueue_mock.call_count == 0
+            out = helpers.call_action(
+                "xloader_submit",
+                context=dict(user=user["name"]),
+                resource_id=res["id"],
+            )
+            assert out is False
+            assert enqueue_mock.call_count == 0
+
+    def test_submit_with_ignore_pending_when_multipart_pending(self):
+        user = factories.User()
+        res = factories.Resource(user=user, format="aaa")
+        with mock.patch(
+            "ckanext.xloader.action.enqueue_job",
+            return_value=mock.MagicMock(id=123),
+        ) as enqueue_mock:
+            helpers.call_action(
+                "resource_patch",
+                {"user": user["name"]},
+                id=res["id"],
+                format="csv",
+                cloudstorage_multipart_pending="True",
+            )
+            assert enqueue_mock.call_count == 0
+            out = helpers.call_action(
+                "xloader_submit",
+                context=dict(user=user["name"]),
+                resource_id=res["id"],
+                ignore_pending=True,
+            )
+            assert out is True
+            assert enqueue_mock.call_count == 1
+
     def test_submit_to_custom_queue_without_auth(self):
         # check that xloader_submit doesn't allow regular users to change queues
         user = factories.User()
