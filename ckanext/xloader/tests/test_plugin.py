@@ -34,6 +34,59 @@ class TestNotify(object):
 
         assert func.called
 
+    def test_skip_when_cloudstorage_multipart_pending(self):
+        """xloader must not submit while a cloudstorage multipart upload is
+        still in flight. When the flag is later cleared (e.g. by
+        cloudstorage_finish_multipart calling resource_patch) xloader should
+        submit."""
+        with mock.patch(
+            "ckanext.xloader.action.enqueue_job",
+            return_value=mock.MagicMock(id=123),
+        ) as enqueue_mock:
+            dataset = factories.Dataset()
+
+            resource = helpers.call_action(
+                "resource_create",
+                {},
+                package_id=dataset["id"],
+                url="http://example.com/file.csv",
+                format="CSV",
+                cloudstorage_multipart_pending="True",
+            )
+
+            assert enqueue_mock.call_count == 0, (
+                "should not enqueue while cloudstorage_multipart_pending=True"
+            )
+
+            helpers.call_action(
+                "resource_patch",
+                {},
+                id=resource["id"],
+                cloudstorage_multipart_pending="False",
+            )
+
+            assert enqueue_mock.call_count == 1, (
+                "xloader should enqueue once the pending flag is cleared"
+            )
+
+    def test_submit_when_no_cloudstorage_multipart_pending(self, monkeypatch):
+        """Resources without the cloudstorage_multipart_pending flag must
+        behave as before (plain resource_update path is unaffected)."""
+        func = mock.Mock()
+        monkeypatch.setitem(_actions, "xloader_submit", func)
+
+        dataset = factories.Dataset()
+
+        helpers.call_action(
+            "resource_create",
+            {},
+            package_id=dataset["id"],
+            url="http://example.com/file.csv",
+            format="CSV",
+        )
+
+        assert func.called
+
     def test_submit_when_url_changes(self, monkeypatch):
         func = mock.Mock()
         monkeypatch.setitem(_actions, "xloader_submit", func)
