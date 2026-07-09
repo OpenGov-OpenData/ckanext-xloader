@@ -244,6 +244,53 @@ def xloader_data_into_datastore_(input, job_dict, logger):
         #                 patch_only=True)
         # logger.info('File Hash updated for resource: %s', resource['hash'])
 
+    # Capture existing field definitions (types + data dictionary, incl. type
+    # overrides) so we can restore an empty table if the load fails and drops it.
+    # The overrides live only in the DataStore table's column comments, so they
+    # are lost once load_csv/load_table deletes the table on a type change.
+    existing = datastore_resource_exists(resource['id'])
+    preserved_fields = []
+    if existing:
+        preserved_fields = [
+            {'id': f['id'], 'type': f['type'], 'info': f.get('info', {})}
+            for f in existing.get('fields', [])
+            if not f['id'] == '_id']
+
+    def recreate_empty_table_if_dropped():
+        # All load attempts failed. If the table was dropped (a type change
+        # deletes it, then the reload transaction rolls back leaving nothing),
+        # recreate it empty with the original fields so the Data Dictionary
+        # stays editable and the user can fix the column type and re-upload.
+        # Best-effort: never let a failure here replace the real load error
+        # that we are about to re-raise.
+        try:
+            recreate = asbool(config.get(
+                'ckanext.xloader.recreate_empty_table_on_error', True))
+            # Re-check existence here: the table may have been dropped during
+            # the load, so this must be a fresh query (not the cached lookup).
+            if recreate and preserved_fields \
+                    and not datastore_resource_exists(resource['id']):
+                logger.warning(
+                    'Load failed; creating an empty DataStore table so '
+                    'the Data Dictionary stays editable.')
+                ctx = {'model': model, 'ignore_auth': True}
+                get_action('datastore_create')(ctx, {
+                    'resource_id': resource['id'],
+                    'fields': preserved_fields,
+                    'records': None,      # empty table
+                    'force': True,
+                })
+                # Make the Data Dictionary tab reappear, but do NOT persist the
+                # file hash (so re-uploading the corrected file still loads) and
+                # mark the table as not containing all records (it is empty).
+                set_resource_metadata({
+                    'resource_id': resource['id'],
+                    'datastore_active': True,
+                    'datastore_contains_all_records_of_source_file': False,
+                })
+        except Exception:
+            logger.exception('Failed to recreate empty DataStore table')
+
     # Load it
     logger.info('Loading CSV')
     # If ckanext.xloader.use_type_guessing is not configured, fall back to
@@ -251,7 +298,7 @@ def xloader_data_into_datastore_(input, job_dict, logger):
     use_type_guessing = asbool(
         config.get('ckanext.xloader.use_type_guessing', config.get(
             'ckanext.xloader.just_load_with_messytables', False))) \
-        and not datastore_resource_exists(resource['id']) \
+        and not existing \
         and os.path.getsize(tmp_file.name) <= MAX_TYPE_GUESSING_LENGTH
     logger.info("'use_type_guessing' mode is: %s", use_type_guessing)
     try:
@@ -272,7 +319,11 @@ def xloader_data_into_datastore_(input, job_dict, logger):
     except FileCouldNotBeLoadedError as e:
         logger.warning('Loading excerpt for this format not supported.')
         logger.error('Loading file raised an error: %s', e)
+        recreate_empty_table_if_dropped()
         raise JobError('Loading file raised an error: {}'.format(e))
+    except Exception:
+        recreate_empty_table_if_dropped()
+        raise  # keep the job status = error; the log shows the real cause
 
     tmp_file.close()
 
