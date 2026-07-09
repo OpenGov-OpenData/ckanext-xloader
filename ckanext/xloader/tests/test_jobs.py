@@ -241,7 +241,7 @@ class TestRecreateEmptyTableOnError(object):
                 jobs, "datastore_resource_exists", side_effect=fake_exists))
             stack.enter_context(mock.patch.object(
                 jobs, "get_action", get_action))
-            stack.enter_context(mock.patch.object(
+            set_resource_metadata = stack.enter_context(mock.patch.object(
                 jobs, "set_resource_metadata"))
             stack.enter_context(mock.patch.object(
                 jobs, "set_datastore_active"))
@@ -271,7 +271,7 @@ class TestRecreateEmptyTableOnError(object):
 
         return {
             "get_action": get_action,
-            "set_resource_metadata": jobs.set_resource_metadata,
+            "set_resource_metadata": set_resource_metadata,
             "exc": exc,
         }
 
