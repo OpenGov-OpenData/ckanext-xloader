@@ -169,5 +169,17 @@ groups:
           they will also display "complete", "active", "inactive", and "unknown".
         type: bool
         required: false
+      - key: ckanext.xloader.recreate_empty_table_on_error
+        default: True
+        example: False
+        description: |
+          When a load fails after the existing DataStore table has been dropped
+          (e.g. a Data Dictionary type override the data cannot satisfy),
+          recreate an empty table using the original field definitions so the
+          Data Dictionary stays visible and editable and the user can correct
+          the type and re-upload. Set to False to leave the resource with no
+          DataStore table on failure.
+        type: bool
+        required: false
 
 
