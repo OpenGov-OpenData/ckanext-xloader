@@ -418,6 +418,8 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
                 'text': str,
                 'numeric': Decimal,
                 'timestamp': datetime.datetime,
+                'date': datetime.date,
+                'time': datetime.time,
             }.get(existing_info.get(h, {}).get('type_override'), t)
             for t, h in zip(types, headers)]
 
@@ -491,7 +493,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
         count = 0
         # Some types cannot be stored as empty strings and must be converted to None,
         # https://github.com/ckan/ckanext-xloader/issues/182
-        non_empty_types = ['timestamp', 'numeric']
+        non_empty_types = ['timestamp', 'numeric', 'date', 'time']
         for i, records in enumerate(chunky(result, 250)):
             count += len(records)
             logger.info('Saving chunk %s', i)
@@ -526,6 +528,8 @@ _TYPE_MAPPING = {
     "<class 'int'>": 'numeric',
     "<class 'float'>": 'numeric',
     "<class 'datetime.datetime'>": 'timestamp',
+    "<class 'datetime.date'>": 'date',
+    "<class 'datetime.time'>": 'time',
 }
 
 
