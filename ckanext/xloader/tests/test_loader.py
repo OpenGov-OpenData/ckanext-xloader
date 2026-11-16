@@ -75,6 +75,39 @@ class TestLoadBase(object):
         records = results.fetchall()
         return [r[0] for r in records]
 
+    def _create_with_date_time_overrides(self, resource_id):
+        # As the Data Dictionary would leave it before the next upload
+        p.toolkit.get_action("datastore_create")(
+            {"ignore_auth": True},
+            {
+                "resource_id": resource_id,
+                "force": True,
+                "fields": [
+                    {"id": "name", "type": "text"},
+                    {"id": "amount", "type": "text"},
+                    {"id": "event_date", "type": "text",
+                     "info": {"type_override": "date"}},
+                    {"id": "event_time", "type": "text",
+                     "info": {"type_override": "time"}},
+                ],
+            },
+        )
+
+    def _assert_date_time_search_results(self, resource_id):
+        rec = p.toolkit.get_action("datastore_search")(
+            None, {"resource_id": resource_id, "sort": "_id"}
+        )
+        types = dict((f["id"], f["type"]) for f in rec["fields"])
+        assert types["event_date"] == "date"
+        assert types["event_time"] == "time"
+        assert [(r["event_date"], r["event_time"]) for r in rec["records"]] == [
+            ("2024-03-15", "14:30:00"),
+            ("2024-03-16", "09:05:00"),
+            ("2024-11-01", "00:00:00"),
+            ("2024-12-31", "23:59:59"),
+            (None, None),
+        ]
+
     def _get_column_types(self, Session, table_name):
         c = Session.connection()
         sql = (
@@ -778,6 +811,40 @@ class TestLoadCsv(TestLoadBase):
         assert records[4][1] == "'berkeley':1"
         assert records[5][1] == "'-01':2 '-03':3 '00':4,5,6 '2011':1 '5':7"
 
+    def test_reload_with_date_and_time_overrides(self, Session):
+        csv_filepath = get_sample_filepath("date_time_sample.csv")
+        resource = factories.Resource()
+        resource_id = resource['id']
+        self._create_with_date_time_overrides(resource_id)
+
+        fields, is_data_dict_populated = loader.load_csv(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        loader.create_column_indexes(
+            fields=fields, resource_id=resource_id, logger=logger
+        )
+        assert is_data_dict_populated == True
+
+        assert self._get_column_types(Session, resource_id) == [
+            u"int4",
+            u"tsvector",
+            u"text",
+            u"text",
+            u"date",
+            u"time",
+        ]
+        assert self._get_records(Session, resource_id) == [
+            (1, u"City Hall", u"1250.50", datetime.date(2024, 3, 15), datetime.time(14, 30)),
+            (2, u"Library", u"0", datetime.date(2024, 3, 16), datetime.time(9, 5)),
+            (3, u"Park", u"42", datetime.date(2024, 11, 1), datetime.time(0, 0)),
+            (4, u"Museum", u"9999.99", datetime.date(2024, 12, 31), datetime.time(23, 59, 59)),
+            (5, u"Annex", u"7", None, None),
+        ]
+        self._assert_date_time_search_results(resource_id)
+
     def test_encode_headers(self):
         test_string_headers = [u"id", u"namé"]
         test_float_headers = [u"id", u"näme", 2.0]
@@ -971,6 +1038,47 @@ class TestLoadTabulator(TestLoadBase):
         assert fields[0].get("info", {}).get("type_override", "") == "timestamp"
         assert fields[1].get("info", {}).get("type_override", "") == "numeric"
         assert fields[2].get("info", {}).get("type_override", "") == ""
+
+    def test_reload_with_date_and_time_overrides(self, Session):
+        csv_filepath = get_sample_filepath("date_time_sample.csv")
+        resource = factories.Resource()
+        resource_id = resource['id']
+        self._create_with_date_time_overrides(resource_id)
+
+        is_data_dict_populated = loader.load_table(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        assert is_data_dict_populated == True
+
+        assert self._get_column_types(Session, resource_id) == [
+            u"int4",
+            u"tsvector",
+            u"text",
+            u"numeric",
+            u"date",
+            u"time",
+        ]
+        assert self._get_records(Session, resource_id) == [
+            (1, u"City Hall", Decimal("1250.50"), datetime.date(2024, 3, 15), datetime.time(14, 30)),
+            (2, u"Library", Decimal("0"), datetime.date(2024, 3, 16), datetime.time(9, 5)),
+            (3, u"Park", Decimal("42"), datetime.date(2024, 11, 1), datetime.time(0, 0)),
+            (4, u"Museum", Decimal("9999.99"), datetime.date(2024, 12, 31), datetime.time(23, 59, 59)),
+            (5, u"Annex", Decimal("7"), None, None),
+        ]
+        self._assert_date_time_search_results(resource_id)
+
+        rec = p.toolkit.get_action("datastore_search")(
+            None, {"resource_id": resource_id, "limit": 0}
+        )
+        overrides = dict(
+            (f["id"], f.get("info", {}).get("type_override"))
+            for f in rec["fields"]
+        )
+        assert overrides["event_date"] == "date"
+        assert overrides["event_time"] == "time"
 
     def test_simple_large_file(self, Session):
         csv_filepath = get_sample_filepath("simple-large.csv")

@@ -11,6 +11,7 @@ from ckan.plugins.toolkit import config
 
 CSV_SAMPLE_LINES = 1000
 DATE_REGEX = re.compile(r'''^\d{1,4}[-/.\s]\S+[-/.\s]\S+''')
+TIME_REGEX = re.compile(r'''^\d{1,2}:\d{2}''')
 
 
 class TypeConverter:
@@ -45,6 +46,14 @@ class TypeConverter:
                     converted_value = to_timestamp(cell_value)
                     if converted_value:
                         row[cell_index] = converted_value
+                elif cell_type is datetime.date:
+                    converted_value = to_date(cell_value)
+                    if converted_value:
+                        row[cell_index] = converted_value
+                elif cell_type is datetime.time:
+                    converted_value = to_time(cell_value)
+                    if converted_value is not None:
+                        row[cell_index] = converted_value
             yield (row_number, headers, row)
 
 
@@ -71,3 +80,29 @@ def to_timestamp(value):
             return p.parse(value, yearfirst=yearfirst, dayfirst=dayfirst)
         except ParserError:
             return None
+
+
+def to_date(value):
+    # datetime is a subclass of date, so it must be checked first
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    timestamp = to_timestamp(value)
+    return timestamp.date() if timestamp else None
+
+
+def to_time(value):
+    if isinstance(value, datetime.datetime):
+        return value.time()
+    if isinstance(value, datetime.time):
+        return value
+    if not isinstance(value, six.string_types):
+        return None
+    if TIME_REGEX.search(value):
+        try:
+            return parser().parse(value).time()
+        except (ValueError, OverflowError):
+            return None
+    timestamp = to_timestamp(value)
+    return timestamp.time() if timestamp else None
