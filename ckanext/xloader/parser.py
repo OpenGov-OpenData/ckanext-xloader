@@ -12,6 +12,17 @@ from ckan.plugins.toolkit import config
 CSV_SAMPLE_LINES = 1000
 DATE_REGEX = re.compile(r'''^\d{1,4}[-/.\s]\S+[-/.\s]\S+''')
 TIME_REGEX = re.compile(r'''^\d{1,2}:\d{2}''')
+# Strip currency symbols / letters / spaces; keep digits, sign, decimal, and ().
+MONEY_CLEAN_REGEX = re.compile(r'[^\d.\-()]')
+
+
+class Money(Decimal):
+    """Marker type for Currency type_override columns (Postgres money).
+
+    Subclasses Decimal so values remain numeric, but identity checks
+    distinguish it from plain Decimal for _TYPE_MAPPING.
+    """
+    pass
 
 
 class TypeConverter:
@@ -52,6 +63,10 @@ class TypeConverter:
                         row[cell_index] = converted_value
                 elif cell_type is datetime.time:
                     converted_value = to_time(cell_value)
+                    if converted_value is not None:
+                        row[cell_index] = converted_value
+                elif cell_type is Money:
+                    converted_value = to_money(cell_value)
                     if converted_value is not None:
                         row[cell_index] = converted_value
             yield (row_number, headers, row)
@@ -106,3 +121,24 @@ def to_time(value):
             return None
     timestamp = to_timestamp(value)
     return timestamp.time() if timestamp else None
+
+
+def to_money(value):
+    """Parse a currency-like string into Decimal, or return None."""
+    if isinstance(value, Decimal):
+        return value
+    if not isinstance(value, six.string_types):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    negative = False
+    if cleaned.startswith('(') and cleaned.endswith(')'):
+        negative = True
+        cleaned = cleaned[1:-1].strip()
+    cleaned = MONEY_CLEAN_REGEX.sub('', cleaned)
+    if not cleaned or cleaned in ('-', '.', '-.'):
+        return None
+    if negative and not cleaned.startswith('-'):
+        cleaned = '-' + cleaned
+    return to_number(cleaned)

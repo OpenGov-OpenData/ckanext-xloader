@@ -6,13 +6,16 @@ from decimal import Decimal
 from datetime import date, datetime, time
 
 from tabulator import Stream
-from ckanext.xloader.parser import TypeConverter, to_date, to_time
+from ckanext.xloader.parser import Money, TypeConverter, to_date, to_money, to_time
 
 csv_filepath = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "samples", "date_formats.csv")
 )
 date_time_filepath = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "samples", "date_time_sample.csv")
+)
+currency_filepath = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "samples", "currency_sample.csv")
 )
 
 
@@ -176,3 +179,27 @@ class TestParser(object):
         assert to_time(time(23, 59, 59)) == time(23, 59, 59)
         assert to_time('99:99') is None
         assert to_time('not a time') is None
+
+    def test_money_type(self):
+        types = [str, Money]
+        with Stream(currency_filepath, format='csv',
+                    post_parse=[TypeConverter(types=types).convert_types]) as stream:
+            assert stream.sample == [
+                ['name', 'amount'],
+                ['City Hall', Decimal('1250.50')],
+                ['Library', Decimal('1250.50')],
+                ['Park', Decimal('-42')],
+                ['Museum', Decimal('-7.00')],
+                ['Zero', Decimal('0')],
+                ['Annex', ''],
+            ]
+
+    def test_to_money(self):
+        assert to_money('1250.50') == Decimal('1250.50')
+        assert to_money('$1,250.50') == Decimal('1250.50')
+        assert to_money('-42') == Decimal('-42')
+        assert to_money('($7.00)') == Decimal('-7.00')
+        assert to_money('0') == Decimal('0')
+        assert to_money(Decimal('10.00')) == Decimal('10.00')
+        assert to_money('') is None
+        assert to_money('not money') is None

@@ -18,7 +18,7 @@ from unidecode import unidecode
 import ckan.plugins as p
 
 from .job_exceptions import FileCouldNotBeLoadedError, LoaderError
-from .parser import CSV_SAMPLE_LINES, TypeConverter
+from .parser import CSV_SAMPLE_LINES, Money, TypeConverter
 from .utils import datastore_resource_exists, headers_guess, type_guess
 
 from ckan.plugins.toolkit import config
@@ -420,6 +420,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
                 'timestamp': datetime.datetime,
                 'date': datetime.date,
                 'time': datetime.time,
+                'money': Money,
             }.get(existing_info.get(h, {}).get('type_override'), t)
             for t, h in zip(types, headers)]
 
@@ -493,7 +494,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
         count = 0
         # Some types cannot be stored as empty strings and must be converted to None,
         # https://github.com/ckan/ckanext-xloader/issues/182
-        non_empty_types = ['timestamp', 'numeric', 'date', 'time']
+        non_empty_types = ['timestamp', 'numeric', 'date', 'time', 'money']
         for i, records in enumerate(chunky(result, 250)):
             count += len(records)
             logger.info('Saving chunk %s', i)
@@ -530,6 +531,7 @@ _TYPE_MAPPING = {
     "<class 'datetime.datetime'>": 'timestamp',
     "<class 'datetime.date'>": 'date',
     "<class 'datetime.time'>": 'time',
+    "<class 'ckanext.xloader.parser.Money'>": 'money',
 }
 
 

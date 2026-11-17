@@ -108,6 +108,51 @@ class TestLoadBase(object):
             (None, None),
         ]
 
+    def _create_with_currency_override(self, resource_id):
+        # As the Data Dictionary would leave it before the next upload
+        p.toolkit.get_action("datastore_create")(
+            {"ignore_auth": True},
+            {
+                "resource_id": resource_id,
+                "force": True,
+                "fields": [
+                    {"id": "name", "type": "text"},
+                    {"id": "amount", "type": "text",
+                     "info": {"type_override": "money"}},
+                ],
+            },
+        )
+
+    def _money_decimal(self, value):
+        """Normalize money values from Postgres / datastore_search to Decimal."""
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return value
+        from ckanext.xloader.parser import to_money
+        return to_money(str(value))
+
+    def _assert_currency_search_results(self, resource_id):
+        rec = p.toolkit.get_action("datastore_search")(
+            None, {"resource_id": resource_id, "sort": "_id"}
+        )
+        types = dict((f["id"], f["type"]) for f in rec["fields"])
+        assert types["amount"] == "money"
+        amounts = [self._money_decimal(r["amount"]) for r in rec["records"]]
+        assert amounts == [
+            Decimal("1250.50"),
+            Decimal("1250.50"),
+            Decimal("-42.00"),
+            Decimal("-7.00"),
+            Decimal("0.00"),
+            None,
+        ]
+        overrides = dict(
+            (f["id"], f.get("info", {}).get("type_override"))
+            for f in rec["fields"]
+        )
+        assert overrides["amount"] == "money"
+
     def _get_column_types(self, Session, table_name):
         c = Session.connection()
         sql = (
@@ -845,6 +890,58 @@ class TestLoadCsv(TestLoadBase):
         ]
         self._assert_date_time_search_results(resource_id)
 
+    def test_reload_with_currency_override(self, Session):
+        csv_filepath = get_sample_filepath("currency_sample.csv")
+        resource = factories.Resource()
+        resource_id = resource['id']
+        self._create_with_currency_override(resource_id)
+
+        fields, is_data_dict_populated = loader.load_csv(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        loader.create_column_indexes(
+            fields=fields, resource_id=resource_id, logger=logger
+        )
+        assert is_data_dict_populated == True
+
+        # Second load with the same override clears rather than drops.
+        # Do this before Session reads so the scoped connection does not
+        # hold a lock that blocks TRUNCATE.
+        fields, is_data_dict_populated = loader.load_csv(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        loader.create_column_indexes(
+            fields=fields, resource_id=resource_id, logger=logger
+        )
+        assert is_data_dict_populated == True
+
+        assert self._get_column_types(Session, resource_id) == [
+            u"int4",
+            u"tsvector",
+            u"text",
+            u"money",
+        ]
+        records = self._get_records(Session, resource_id)
+        assert [r[1] for r in records] == [
+            u"City Hall", u"Library", u"Park", u"Museum", u"Zero", u"Annex",
+        ]
+        amounts = [self._money_decimal(r[2]) for r in records]
+        assert amounts == [
+            Decimal("1250.50"),
+            Decimal("1250.50"),
+            Decimal("-42.00"),
+            Decimal("-7.00"),
+            Decimal("0.00"),
+            None,
+        ]
+        self._assert_currency_search_results(resource_id)
+
     def test_encode_headers(self):
         test_string_headers = [u"id", u"namé"]
         test_float_headers = [u"id", u"näme", 2.0]
@@ -1079,6 +1176,52 @@ class TestLoadTabulator(TestLoadBase):
         )
         assert overrides["event_date"] == "date"
         assert overrides["event_time"] == "time"
+
+    def test_reload_with_currency_override(self, Session):
+        csv_filepath = get_sample_filepath("currency_sample.csv")
+        resource = factories.Resource()
+        resource_id = resource['id']
+        self._create_with_currency_override(resource_id)
+
+        is_data_dict_populated = loader.load_table(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        assert is_data_dict_populated == True
+
+        # Second load with the same override clears rather than drops.
+        # Do this before Session reads so the scoped connection does not
+        # hold a lock that blocks TRUNCATE.
+        is_data_dict_populated = loader.load_table(
+            csv_filepath,
+            resource_id=resource_id,
+            mimetype="text/csv",
+            logger=logger,
+        )
+        assert is_data_dict_populated == True
+
+        assert self._get_column_types(Session, resource_id) == [
+            u"int4",
+            u"tsvector",
+            u"text",
+            u"money",
+        ]
+        records = self._get_records(Session, resource_id)
+        assert [r[1] for r in records] == [
+            u"City Hall", u"Library", u"Park", u"Museum", u"Zero", u"Annex",
+        ]
+        amounts = [self._money_decimal(r[2]) for r in records]
+        assert amounts == [
+            Decimal("1250.50"),
+            Decimal("1250.50"),
+            Decimal("-42.00"),
+            Decimal("-7.00"),
+            Decimal("0.00"),
+            None,
+        ]
+        self._assert_currency_search_results(resource_id)
 
     def test_simple_large_file(self, Session):
         csv_filepath = get_sample_filepath("simple-large.csv")
