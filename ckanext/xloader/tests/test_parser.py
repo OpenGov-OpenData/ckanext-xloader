@@ -203,3 +203,13 @@ class TestParser(object):
         assert to_money(Decimal('10.00')) == Decimal('10.00')
         assert to_money('') is None
         assert to_money('not money') is None
+        # EU separators
+        assert to_money('1.234,56') == Decimal('1234.56')
+        assert to_money('12,34') == Decimal('12.34')
+        assert to_money('($7,00)') == Decimal('-7.00')
+        assert to_money('€1.234,56') == Decimal('1234.56')
+        # Scientific notation
+        assert to_money('1e3') == Decimal('1000')
+        assert to_money('1.5e2') == Decimal('150')
+        assert to_money('1,5e2') == Decimal('150')
+        assert to_money('$1e3') == Decimal('1000')

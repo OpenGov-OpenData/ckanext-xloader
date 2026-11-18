@@ -12,8 +12,11 @@ from ckan.plugins.toolkit import config
 CSV_SAMPLE_LINES = 1000
 DATE_REGEX = re.compile(r'''^\d{1,4}[-/.\s]\S+[-/.\s]\S+''')
 TIME_REGEX = re.compile(r'''^\d{1,2}:\d{2}''')
-# Strip currency symbols / letters / spaces; keep digits, sign, decimal, and ().
-MONEY_CLEAN_REGEX = re.compile(r'[^\d.\-()]')
+# After paren handling: keep digits, separators, sign, and exponent letters.
+MONEY_BODY_REGEX = re.compile(r'[^\d.,eE+\-]')
+MONEY_SCI_REGEX = re.compile(
+    r'^([+-]?)([\d.,]*)[eE]([+-]?\d+)$'
+)
 
 
 class Money(Decimal):
@@ -123,8 +126,45 @@ def to_time(value):
     return timestamp.time() if timestamp else None
 
 
+def _normalize_decimal_separators(value):
+    """Return a Decimal-friendly numeric string with '.' as the decimal mark.
+
+    Supports US (1,250.50) and EU (1.234,56 / 12,34) grouping. A lone comma
+    with exactly three following digits is treated as a thousands separator
+    (1,250); otherwise a lone comma is the decimal mark (12,34).
+    """
+    if not value or value in ('.', ',', '-', '+', '-.', '.-', '-,', ',-'):
+        return None
+    has_dot = '.' in value
+    has_comma = ',' in value
+    if has_dot and has_comma:
+        if value.rfind(',') > value.rfind('.'):
+            # EU: 1.234,56
+            return value.replace('.', '').replace(',', '.')
+        # US: 1,234.56
+        return value.replace(',', '')
+    if has_comma:
+        parts = value.split(',')
+        if len(parts) == 2 and len(parts[1]) != 3:
+            # EU decimal: 12,34 or 7,00
+            return parts[0] + '.' + parts[1]
+        # US/EU thousands: 1,250 or 1,234,567
+        return value.replace(',', '')
+    if has_dot:
+        parts = value.split('.')
+        if len(parts) > 2:
+            # EU thousands: 1.234.567
+            return ''.join(parts)
+        return value
+    return value
+
+
 def to_money(value):
-    """Parse a currency-like string into Decimal, or return None."""
+    """Parse a currency-like string into Decimal, or return None.
+
+    Handles currency symbols, accounting parentheses, US/EU separators, and
+    scientific notation (1e3, 1.5e2).
+    """
     if isinstance(value, Decimal):
         return value
     if not isinstance(value, six.string_types):
@@ -136,9 +176,37 @@ def to_money(value):
     if cleaned.startswith('(') and cleaned.endswith(')'):
         negative = True
         cleaned = cleaned[1:-1].strip()
-    cleaned = MONEY_CLEAN_REGEX.sub('', cleaned)
-    if not cleaned or cleaned in ('-', '.', '-.'):
+    cleaned = MONEY_BODY_REGEX.sub('', cleaned)
+    if not cleaned:
         return None
-    if negative and not cleaned.startswith('-'):
-        cleaned = '-' + cleaned
-    return to_number(cleaned)
+
+    sci = MONEY_SCI_REGEX.match(cleaned)
+    if sci:
+        sign, mantissa, exponent = sci.groups()
+        if not mantissa or mantissa in ('.', ','):
+            mantissa = '1'
+        mantissa = _normalize_decimal_separators(mantissa)
+        if mantissa is None:
+            return None
+        try:
+            result = Decimal(sign + mantissa + 'e' + exponent)
+        except InvalidOperation:
+            return None
+    else:
+        # Strip a single leading sign so separator logic sees the digits.
+        sign = ''
+        if cleaned[0] in '+-':
+            sign = cleaned[0]
+            cleaned = cleaned[1:]
+        normalized = _normalize_decimal_separators(cleaned)
+        if normalized is None:
+            return None
+        result = to_number(sign + normalized)
+        if result is None:
+            return None
+
+    if negative:
+        # Accounting parentheses always mean a negative absolute value,
+        # even if the inner text already had a leading minus.
+        result = -abs(result)
+    return result
