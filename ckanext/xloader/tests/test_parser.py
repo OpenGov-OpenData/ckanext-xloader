@@ -213,3 +213,11 @@ class TestParser(object):
         assert to_money('1.5e2') == Decimal('150')
         assert to_money('1,5e2') == Decimal('150')
         assert to_money('$1e3') == Decimal('1000')
+        assert to_money('2.5E+3') == Decimal('2500')
+        assert to_money('1e-2') == Decimal('0.01')
+        # Currency codes that contain E must not be treated as an exponent
+        assert to_money('EUR 12') == Decimal('12')
+        assert to_money('1,200 EUR') == Decimal('1200')
+        assert to_money('€12') == Decimal('12')
+        assert to_money('12 USD') == Decimal('12')
+        assert to_money('50 SEK') == Decimal('50')

@@ -12,10 +12,14 @@ from ckan.plugins.toolkit import config
 CSV_SAMPLE_LINES = 1000
 DATE_REGEX = re.compile(r'''^\d{1,4}[-/.\s]\S+[-/.\s]\S+''')
 TIME_REGEX = re.compile(r'''^\d{1,2}:\d{2}''')
-# After paren handling: keep digits, separators, sign, and exponent letters.
-MONEY_BODY_REGEX = re.compile(r'[^\d.,eE+\-]')
+# Drop currency letters and symbols. e/E stay only when they are an exponent:
+# a digit (or separator) before them and a signed digit run after them.
+# That keeps 1e3 / 1.5e2 and drops the E in 'EUR 12' and '1,200 EUR'.
+MONEY_BODY_REGEX = re.compile(
+    r'(?<![\d.,])[eE]|[eE](?![+-]?\d)|[^\d.,eE+\-]'
+)
 MONEY_SCI_REGEX = re.compile(
-    r'^([+-]?)([\d.,]*)[eE]([+-]?\d+)$'
+    r'^([+-]?)(\d[\d.,]*)[eE]([+-]?\d+)$'
 )
 
 
@@ -162,8 +166,9 @@ def _normalize_decimal_separators(value):
 def to_money(value):
     """Parse a currency-like string into Decimal, or return None.
 
-    Handles currency symbols, accounting parentheses, US/EU separators, and
-    scientific notation (1e3, 1.5e2).
+    Handles currency symbols and codes (EUR, USD), accounting parentheses,
+    US/EU separators, and scientific notation (1e3, 1.5e2). An e/E is kept
+    only when it is an exponent, so 'EUR 12' does not become 1e12.
     """
     if isinstance(value, Decimal):
         return value
@@ -183,8 +188,6 @@ def to_money(value):
     sci = MONEY_SCI_REGEX.match(cleaned)
     if sci:
         sign, mantissa, exponent = sci.groups()
-        if not mantissa or mantissa in ('.', ','):
-            mantissa = '1'
         mantissa = _normalize_decimal_separators(mantissa)
         if mantissa is None:
             return None
